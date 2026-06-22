@@ -1,0 +1,6 @@
+{
+  "name": "68Share",
+  "description": "A temporary file-sharing platform that lets users instantly create a room, share a code, and transfer files between devices.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
