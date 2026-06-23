@@ -100,7 +100,12 @@ export async function dbGetRoom(code: string): Promise<Room | null> {
 }
 
 // Create room in Firestore with instant local mirror
-export async function dbCreateRoom(name: string, duration: RoomDuration, password?: string | null): Promise<Room> {
+export async function dbCreateRoom(
+  name: string, 
+  duration: RoomDuration, 
+  password?: string | null,
+  defaultTab?: 'files' | 'clipboard'
+): Promise<Room> {
   const code = generateRoomCode();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + getDurationMs(duration)).toISOString();
@@ -122,6 +127,9 @@ export async function dbCreateRoom(name: string, duration: RoomDuration, passwor
     ],
     usersOnline: 1,
     lastActiveAt: now.toISOString(),
+    clipboardText: '',
+    clipboardHistory: [],
+    defaultTab: defaultTab || 'files'
   };
 
   // 1. Store locally immediately

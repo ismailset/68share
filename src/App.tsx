@@ -15,7 +15,7 @@ import { useToast } from './components/Toast';
 export default function App() {
   const { toast } = useToast();
   const [activeRoomCode, setActiveRoomCode] = useState<string | null>(null);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState<'files' | 'clipboard' | null>(null);
 
   // Parse URL search parameters on boot to see if direct link or QR scan was used
   useEffect(() => {
@@ -53,14 +53,14 @@ export default function App() {
     }
   }, [toast]);
 
-  const handleOpenSetup = () => {
-    setShowCreateModal(true);
+  const handleOpenSetup = (mode: 'files' | 'clipboard' = 'files') => {
+    setShowCreateModal(mode);
   };
 
   const handleRoomCreated = (room: Room) => {
     setActiveRoomCode(room.code);
     localStorage.setItem('68share_active_room_code', room.code);
-    setShowCreateModal(false);
+    setShowCreateModal(null);
     toast(`Room "${room.code}" successfully created and secured!`, 'success');
 
     // Sync URL queries to include active code so direct reloads match instantly
@@ -122,8 +122,9 @@ export default function App() {
       <AnimatePresence>
         {showCreateModal && (
           <CreateRoom 
-            onClose={() => setShowCreateModal(false)} 
+            onClose={() => setShowCreateModal(null)} 
             onRoomCreated={handleRoomCreated} 
+            initialMode={showCreateModal}
           />
         )}
       </AnimatePresence>

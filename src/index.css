@@ -9,12 +9,13 @@
 }
 
 @layer base {
-  body, p {
-    line-height: 1.75 !important;
+  body {
+    line-height: 1.5;
+    color: #0f172a;
   }
   
   h1, h2, h3, h4, h5, h6 {
-    letter-spacing: 0.04em !important;
+    letter-spacing: -0.02em;
   }
 }
 

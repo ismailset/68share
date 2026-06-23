@@ -8,11 +8,13 @@ import { useToast } from './Toast';
 interface CreateRoomProps {
   onClose: () => void;
   onRoomCreated: (room: Room) => void;
+  initialMode?: 'files' | 'clipboard';
 }
 
-export function CreateRoom({ onClose, onRoomCreated }: CreateRoomProps) {
+export function CreateRoom({ onClose, onRoomCreated, initialMode = 'files' }: CreateRoomProps) {
   const { toast } = useToast();
   const [roomName, setRoomName] = useState('');
+  const [roomMode, setRoomMode] = useState<'files' | 'clipboard'>(initialMode);
   const [duration, setDuration] = useState<RoomDuration>('1hr');
   const [usePassword, setUsePassword] = useState(false);
   const [password, setPassword] = useState('');
@@ -34,7 +36,7 @@ export function CreateRoom({ onClose, onRoomCreated }: CreateRoomProps) {
     const finalPassword = usePassword && password.trim() ? password.trim() : null;
     setIsGenerating(true);
     try {
-      const room = await dbCreateRoom(roomName, duration, finalPassword);
+      const room = await dbCreateRoom(roomName, duration, finalPassword, roomMode);
       setCreatedRoom(room);
       setStage('success');
     } catch (err: any) {
@@ -96,7 +98,9 @@ export function CreateRoom({ onClose, onRoomCreated }: CreateRoomProps) {
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>New Room Setup</span>
               </div>
-              <h2 className="text-2xl font-serif font-bold text-neutral-900 tracking-wide">Create File-Sharing Room</h2>
+              <h2 className="text-2xl font-display font-bold text-neutral-900 tracking-tight">
+                {roomMode === 'clipboard' ? 'Create Clipboard Room' : 'Create Secure Sharing Room'}
+              </h2>
               <p className="text-xs text-neutral-500 font-sans mt-1">Configure your temporary sharing tunnel details</p>
             </div>
 
@@ -112,9 +116,40 @@ export function CreateRoom({ onClose, onRoomCreated }: CreateRoomProps) {
                   type="text"
                   value={roomName}
                   onChange={(e) => setRoomName(e.target.value)}
-                  placeholder="e.g. Layout Assets Sync"
+                  placeholder={roomMode === 'clipboard' ? "e.g. Code & Links Sync" : "e.g. Layout Assets Sync"}
                   className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 font-sans text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400"
                 />
+              </div>
+
+              {/* Room Mode Toggle */}
+              <div>
+                <label className="block text-xs font-sans font-semibold text-neutral-900 tracking-wide uppercase mb-2">
+                  Primary Room Focus
+                </label>
+                <div className="flex bg-[#F3F4F6] p-1 rounded-xl gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setRoomMode('files')}
+                    className={`flex-1 font-sans font-semibold text-xs py-2.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      roomMode === 'files'
+                        ? 'bg-white text-[#2563EB] shadow-sm border border-black/5'
+                        : 'text-neutral-500 hover:text-neutral-900'
+                    }`}
+                  >
+                    <span>📁 File Sharing</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRoomMode('clipboard')}
+                    className={`flex-1 font-sans font-semibold text-xs py-2.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      roomMode === 'clipboard'
+                        ? 'bg-white text-[#2563EB] shadow-sm border border-black/5'
+                        : 'text-neutral-500 hover:text-neutral-900'
+                    }`}
+                  >
+                    <span>📋 Clipboard Sharing</span>
+                  </button>
+                </div>
               </div>
 
               {/* Durations cards selection */}
@@ -208,7 +243,7 @@ export function CreateRoom({ onClose, onRoomCreated }: CreateRoomProps) {
               <div className="w-12 h-12 bg-emerald-50 rounded-full border border-emerald-100 flex items-center justify-center mx-auto mb-4 text-emerald-600">
                 <Check className="w-6 h-6" />
               </div>
-              <h2 className="text-2xl font-serif font-bold text-neutral-900 tracking-wide">Room Created!</h2>
+              <h2 className="text-2xl font-display font-bold text-neutral-900 tracking-tight">Room Created!</h2>
               <p className="text-xs text-neutral-500 font-sans mt-1">Share credentials with colleagues or other screens</p>
             </div>
 

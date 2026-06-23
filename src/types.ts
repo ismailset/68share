@@ -12,10 +12,17 @@ export interface SharedFile {
   chunkCount?: number;
 }
 
+export interface ClipboardEntry {
+  id: string;
+  text: string;
+  timestamp: string;
+  sender: string;
+}
+
 export interface ActivityItem {
   id: string;
   timestamp: string;
-  type: 'join' | 'leave' | 'upload' | 'download';
+  type: 'join' | 'leave' | 'upload' | 'download' | 'clipboard';
   details: string;
 }
 
@@ -29,4 +36,8 @@ export interface Room {
   activity: ActivityItem[];
   usersOnline: number;
   lastActiveAt?: string;
+  // Clipboard Sharing fields:
+  clipboardText?: string;
+  clipboardHistory?: ClipboardEntry[];
+  defaultTab?: 'files' | 'clipboard';
 }

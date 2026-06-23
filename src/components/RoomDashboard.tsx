@@ -10,6 +10,7 @@ import {
   formatBytes, getQrCodeUrl, getDeviceName 
 } from '../lib/storage';
 import { useToast } from './Toast';
+import { ClipboardSync } from './ClipboardSync';
 
 interface RoomDashboardProps {
   key?: string;
@@ -20,6 +21,7 @@ interface RoomDashboardProps {
 export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
   const { toast } = useToast();
   const [room, setRoom] = useState<Room | null>(null);
+  const [activeTab, setActiveTab] = useState<'files' | 'clipboard'>('files');
   const [timeLeft, setTimeLeft] = useState<string>('00:00:00');
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -34,6 +36,17 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const lastKnownClipboardTextRef = useRef<string | undefined>(undefined);
+  const hasInitializedTabRef = useRef(false);
+
+  // Synchronize initial active tab with room focus
+  useEffect(() => {
+    if (room && room.defaultTab && !hasInitializedTabRef.current) {
+      setActiveTab(room.defaultTab);
+      hasInitializedTabRef.current = true;
+    }
+  }, [room]);
 
   // Subscribe to real-time room updates in Firestore
   useEffect(() => {
@@ -45,6 +58,24 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
         onLeave();
         return;
       }
+
+      // Live real-time Clipboard update notification
+      if (
+        active.clipboardText !== undefined &&
+        active.clipboardText !== null &&
+        active.clipboardText !== lastKnownClipboardTextRef.current
+      ) {
+        if (lastKnownClipboardTextRef.current !== undefined && active.clipboardText !== '') {
+          const latestHistory = active.clipboardHistory && active.clipboardHistory[0];
+          if (latestHistory && latestHistory.sender !== getDeviceName()) {
+            toast(`Clipboard updated by ${latestHistory.sender}`, 'info');
+          }
+        }
+        lastKnownClipboardTextRef.current = active.clipboardText;
+      } else if (!active.clipboardText) {
+        lastKnownClipboardTextRef.current = '';
+      }
+
       setRoom(active);
     });
 
@@ -454,121 +485,153 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
       {/* Main split dashboard area */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
         
-        {/* Left Columns: Upload area & file listing */}
+        {/* Left Columns: Upload area & file listing or Clipboard */}
         <div className="lg:col-span-8 flex flex-col gap-6">
           
-          {/* Active Upload Zone */}
-          <div 
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onClick={triggerSelectFile}
-            className={`cursor-pointer group relative p-8 md:p-10 border-2 border-dashed rounded-3xl flex flex-col items-center text-center transition-all ${
-              isDragging 
-                ? 'border-indigo-500 bg-indigo-50/10' 
-                : 'border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-md'
-            }`}
-          >
-            <input 
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              className="hidden"
-            />
-            
-            <div className="w-12 h-12 rounded-2xl bg-neutral-50 border border-neutral-150 flex items-center justify-center text-neutral-500 group-hover:scale-105 transition-transform duration-300">
-              <UploadCloud className="w-6 h-6 text-indigo-600 animate-pulse" />
-            </div>
-
-            <h3 className="font-sans font-bold text-neutral-800 mt-4 text-[15px] tracking-tight">
-              {isUploading ? 'Uploading file...' : 'Drag & Drop files here'}
-            </h3>
-            
-            <p className="font-sans text-xs text-neutral-500 mt-1 max-w-[320px]">
-              {isUploading 
-                ? 'Uploading file segments and syncing across all connected screens...' 
-                : 'or click to browse local files. Supports images, archives, datasets, videos and documents up to 25MB.'}
-            </p>
-
-            {uploadError && (
-              <p className="text-red-600 text-xs mt-3 font-sans font-semibold flex items-center gap-1 bg-red-50 px-3 py-1.5 rounded-lg border border-red-100 animate-bounce">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                {uploadError}
-              </p>
-            )}
+          {/* Tab Selector */}
+          <div className="flex bg-[#F3F4F6] p-1 rounded-2xl border border-neutral-200/50 gap-1 shadow-sm">
+            <button
+              onClick={() => setActiveTab('files')}
+              className={`flex-1 font-sans font-bold text-xs py-3 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                activeTab === 'files'
+                  ? 'bg-white text-[#2563EB] shadow-xs border border-black/5 font-extrabold'
+                  : 'text-neutral-500 hover:text-neutral-800'
+              }`}
+            >
+              <File className="w-4 h-4 text-neutral-400" />
+              <span>Files Vault</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('clipboard')}
+              className={`flex-1 font-sans font-bold text-xs py-3 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                activeTab === 'clipboard'
+                  ? 'bg-white text-[#2563EB] shadow-xs border border-black/5 font-extrabold'
+                  : 'text-neutral-500 hover:text-neutral-800'
+              }`}
+            >
+              <Clipboard className="w-4 h-4 text-neutral-400" />
+              <span>Clipboard Sharing</span>
+            </button>
           </div>
 
-          {/* Shared Files Grid Layout */}
-          <div className="bg-white border border-neutral-200/90 rounded-3xl p-6 shadow-sm text-left">
-            <h2 className="text-sm font-sans font-extrabold text-neutral-800 tracking-wider uppercase mb-5 flex items-center gap-2">
-              <File className="w-4 h-4 text-indigo-600" />
-              <span>Shared Files Catalog ({room.files.length})</span>
-            </h2>
+          {activeTab === 'files' ? (
+            <>
+              {/* Active Upload Zone */}
+              <div 
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={triggerSelectFile}
+                className={`cursor-pointer group relative p-8 md:p-10 border-2 border-dashed rounded-3xl flex flex-col items-center text-center transition-all ${
+                  isDragging 
+                    ? 'border-indigo-500 bg-indigo-50/10' 
+                    : 'border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-md'
+                }`}
+              >
+                <input 
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                
+                <div className="w-12 h-12 rounded-2xl bg-neutral-50 border border-neutral-150 flex items-center justify-center text-neutral-500 group-hover:scale-105 transition-transform duration-300">
+                  <UploadCloud className="w-6 h-6 text-indigo-600 animate-pulse" />
+                </div>
 
-            {room.files.length === 0 ? (
-              <div className="py-20 text-center rounded-2xl bg-neutral-50/50 border border-neutral-100">
-                <File className="w-10 h-10 text-neutral-300 mx-auto mb-3" />
-                <h4 className="font-sans font-semibold text-sm text-neutral-700">No files uploaded yet</h4>
-                <p className="font-sans text-xs text-neutral-500 mt-1 max-w-[285px] mx-auto">
-                  Files dragged and uploaded to this room will immediately pop up for download on all other connected devices.
+                <h3 className="font-sans font-bold text-neutral-800 mt-4 text-[15px] tracking-tight">
+                  {isUploading ? 'Uploading file...' : 'Drag & Drop files here'}
+                </h3>
+                
+                <p className="font-sans text-xs text-neutral-500 mt-1 max-w-[320px]">
+                  {isUploading 
+                    ? 'Uploading file segments and syncing across all connected screens...' 
+                    : 'or click to browse local files. Supports images, archives, datasets, videos and documents up to 25MB.'}
                 </p>
+
+                {uploadError && (
+                  <p className="text-red-600 text-xs mt-3 font-sans font-semibold flex items-center gap-1 bg-red-50 px-3 py-1.5 rounded-lg border border-red-100 animate-bounce">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    {uploadError}
+                  </p>
+                )}
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1">
-                <AnimatePresence initial={false}>
-                  {room.files.map((file) => {
-                    const visualTheme = getFileStyleAndIcon(file.name);
-                    
-                    return (
-                      <motion.div 
-                        initial={{ opacity: 0, scale: 0.97 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, x: -10 }}
-                        key={file.id}
-                        className="p-4 bg-white border border-neutral-150 hover:border-neutral-300 rounded-2xl flex flex-col justify-between gap-4 transition-all hover:shadow-xs group"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${visualTheme.bg}`}>
-                            {visualTheme.icon}
-                          </div>
-                          
-                          <div className="min-w-0 text-left flex-grow">
-                            <h4 className="text-xs font-sans font-bold text-neutral-800 truncate pr-0.5 group-hover:text-indigo-650 transition-colors" title={file.name}>
-                              {file.name}
-                            </h4>
-                            <p className="text-[10px] font-sans font-semibold text-neutral-400 uppercase tracking-wider mt-0.5">
-                              {visualTheme.label}
-                            </p>
-                          </div>
-                        </div>
 
-                        <div className="flex items-center justify-between border-t border-neutral-100 pt-3 relative z-10">
-                          <div className="text-[10px] font-sans text-neutral-500 flex flex-col">
-                            <span className="font-bold text-neutral-700 font-mono">{formatBytes(file.size)}</span>
-                            <span className="text-neutral-400 mt-0.5 truncate max-w-[130px]" title={`Uploaded by ${file.uploader}`}>
-                              By: {file.uploader}
-                            </span>
-                          </div>
+              {/* Shared Files Grid Layout */}
+              <div className="bg-white border border-neutral-200/90 rounded-3xl p-6 shadow-sm text-left">
+                <h2 className="text-sm font-sans font-extrabold text-neutral-800 tracking-wider uppercase mb-5 flex items-center gap-2">
+                  <File className="w-4 h-4 text-[#2563EB]" />
+                  <span>Shared Files Catalog ({room.files.length})</span>
+                </h2>
 
-                          <button 
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              toast(`Downloading "${file.name}"...`, 'success', 2000);
-                              await dbTriggerDownload(file, roomCode);
-                            }}
-                            className="bg-indigo-600 hover:bg-indigo-750 text-white w-8 h-8 rounded-xl flex items-center justify-center transition-all select-none shadow-xs hover:scale-105 cursor-pointer"
-                            title="Download File"
+                {room.files.length === 0 ? (
+                  <div className="py-20 text-center rounded-2xl bg-neutral-50/50 border border-neutral-100">
+                    <File className="w-10 h-10 text-neutral-300 mx-auto mb-3" />
+                    <h4 className="font-sans font-semibold text-sm text-neutral-700">No files uploaded yet</h4>
+                    <p className="font-sans text-xs text-neutral-500 mt-1 max-w-[285px] mx-auto">
+                      Files dragged and uploaded to this room will immediately pop up for download on all other connected devices.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1">
+                    <AnimatePresence initial={false}>
+                      {room.files.map((file) => {
+                        const visualTheme = getFileStyleAndIcon(file.name);
+                        
+                        return (
+                          <motion.div 
+                            initial={{ opacity: 0, scale: 0.97 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, x: -10 }}
+                            key={file.id}
+                            className="p-4 bg-white border border-neutral-150 hover:border-neutral-300 rounded-2xl flex flex-col justify-between gap-4 transition-all hover:shadow-xs group"
                           >
-                            <Download className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </AnimatePresence>
+                            <div className="flex items-start gap-3">
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${visualTheme.bg}`}>
+                                {visualTheme.icon}
+                              </div>
+                              
+                              <div className="min-w-0 text-left flex-grow">
+                                <h4 className="text-xs font-sans font-bold text-neutral-800 truncate pr-0.5 group-hover:text-indigo-650 transition-colors" title={file.name}>
+                                  {file.name}
+                                </h4>
+                                <p className="text-[10px] font-sans font-semibold text-neutral-400 uppercase tracking-wider mt-0.5">
+                                  {visualTheme.label}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between border-t border-neutral-100 pt-3 relative z-10">
+                              <div className="text-[10px] font-sans text-neutral-500 flex flex-col">
+                                <span className="font-bold text-neutral-700 font-mono">{formatBytes(file.size)}</span>
+                                <span className="text-neutral-400 mt-0.5 truncate max-w-[130px]" title={`Uploaded by ${file.uploader}`}>
+                                  By: {file.uploader}
+                                </span>
+                              </div>
+
+                              <button 
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  toast(`Downloading "${file.name}"...`, 'success', 2000);
+                                  await dbTriggerDownload(file, roomCode);
+                                }}
+                                className="bg-indigo-600 hover:bg-indigo-750 text-white w-8 h-8 rounded-xl flex items-center justify-center transition-all select-none shadow-xs hover:scale-105 cursor-pointer"
+                                title="Download File"
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </AnimatePresence>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </>
+          ) : (
+            <ClipboardSync room={room} onUpdateRoom={dbUpdateRoom} />
+          )}
 
         </div>
 

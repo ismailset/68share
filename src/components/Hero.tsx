@@ -8,7 +8,7 @@ import {
 import { dbGetRoom } from '../lib/storage';
 
 interface HeroProps {
-  onCreateRoom: () => void;
+  onCreateRoom: (mode?: 'files' | 'clipboard') => void;
   onJoinRoom: (code: string) => void;
 }
 
@@ -111,12 +111,20 @@ export function Hero({ onCreateRoom, onJoinRoom }: HeroProps) {
                 className="mt-8 flex flex-col sm:flex-row gap-3.5 relative z-20"
               >
                 <button
-                  onClick={onCreateRoom}
+                  onClick={() => onCreateRoom('files')}
                   className="w-full sm:w-auto bg-[#2563EB] hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-500/20 text-white font-sans font-semibold text-[15px] py-3.5 px-8 rounded-full transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer outline-none relative overflow-hidden group"
                 >
                   <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-blue-600 to-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10" />
                   <span>Create Free Room</span>
                   <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                </button>
+
+                <button
+                  onClick={() => onCreateRoom('clipboard')}
+                  className="w-full sm:w-auto bg-[#F1F5F9] hover:bg-[#E2E8F0] text-neutral-800 border border-neutral-200/50 py-3.5 px-8 rounded-full font-sans font-semibold text-[15px] transition-all cursor-pointer shadow-sm active:scale-[0.98] flex items-center justify-center gap-2"
+                >
+                  <Clipboard className="w-4 h-4 text-[#2563EB]" />
+                  <span>Create Clipboard Room</span>
                 </button>
 
                 {!showInput ? (
