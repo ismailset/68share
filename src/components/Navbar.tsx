@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { CreateRoom } from './CreateRoom';
-import { Menu, X, Home, Sparkles, Shield, DollarSign } from 'lucide-react';
+import { Menu, X, Home, Sparkles, Shield, DollarSign, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { usePWA } from './PWAManager';
 
 interface NavbarProps {
   onCreateRoom: () => void;
@@ -10,6 +11,7 @@ interface NavbarProps {
 
 export function Navbar({ onCreateRoom, onNavigateHome }: NavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { isInstallable, isInstalled, installApp } = usePWA();
 
   const handleScrollTo = (id: string) => {
     setMobileMenuOpen(false);
@@ -69,6 +71,16 @@ export function Navbar({ onCreateRoom, onNavigateHome }: NavbarProps) {
 
         {/* Action button grouping */}
         <div className="flex items-center gap-2">
+          {isInstallable && !isInstalled && (
+            <button
+              onClick={installApp}
+              className="hidden sm:flex items-center gap-1.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 px-4 py-2 rounded-full font-sans text-xs md:text-[13px] font-bold tracking-tight cursor-pointer shadow-xs transition-all duration-200 active:scale-95 whitespace-nowrap"
+            >
+              <Download className="w-3.5 h-3.5 text-blue-600" />
+              <span>Install App</span>
+            </button>
+          )}
+
           {/* CTA Button */}
           <button
             onClick={onCreateRoom}
@@ -119,6 +131,24 @@ export function Navbar({ onCreateRoom, onNavigateHome }: NavbarProps) {
                 <span>{item.label}</span>
               </motion.button>
             ))}
+
+            {isInstallable && !isInstalled && (
+              <motion.button
+                initial={{ opacity: 0, x: -15 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.25, delay: 0.2 }}
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  installApp();
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[14px] font-bold text-blue-700 hover:text-blue-800 bg-blue-50/50 hover:bg-blue-50 border border-blue-100/50 transition-all cursor-pointer text-left mt-1"
+              >
+                <div className="w-8 h-8 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600">
+                  <Download className="w-4 h-4" />
+                </div>
+                <span>Install 68Share</span>
+              </motion.button>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
