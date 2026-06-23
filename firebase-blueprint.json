@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "Room": {
+      "title": "Sharing Room",
+      "description": "Represents an active synchronized file sharing room.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Unique 6-character room identifier starting with 68"
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-friendly room name"
+        },
+        "duration": {
+          "type": "string",
+          "enum": ["10min", "1hr", "24hr", "7days"],
+          "description": "Lifetime duration selection"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp for when the room expires"
+        },
+        "password": {
+          "type": "string",
+          "description": "Optional lock passphrase or null"
+        },
+        "files": {
+          "type": "array",
+          "description": "Catalog of files dropped into the room segment"
+        },
+        "activity": {
+          "type": "array",
+          "description": "Log of room interaction items"
+        },
+        "usersOnline": {
+          "type": "number",
+          "description": "Count of screens actively connected"
+        },
+        "lastActiveAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of last activity update"
+        }
+      },
+      "required": ["code", "name", "duration", "expiresAt", "files", "activity", "usersOnline"]
+    },
+    "FileContent": {
+      "title": "File Payload Content",
+      "description": "Physical Base64 segments of uploaded files up to 700KB",
+      "type": "object",
+      "properties": {
+        "dataUrl": {
+          "type": "string",
+          "description": "Base64 data url stream"
+        }
+      },
+      "required": ["dataUrl"]
+    }
+  },
+  "firestore": {
+    "/rooms/{roomCode}": {
+      "schema": "Room",
+      "description": "Active temporary file sharing rooms"
+    },
+    "/file_contents/{fileId}": {
+      "schema": "FileContent",
+      "description": "Physical representation of base64 segments"
+    }
+  }
+}

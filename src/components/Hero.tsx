@@ -50,8 +50,8 @@ export function Hero({ onCreateRoom, onJoinRoom }: HeroProps) {
       } else {
         setErrorMsg(`Room "${formattedCode}" not found. It may have expired or does not exist!`);
       }
-    } catch (err) {
-      setErrorMsg('Network error. Please try again.');
+    } catch (err: any) {
+      setErrorMsg(`Connection error: ${err?.message || err || 'Network error. Please try again.'}`);
       console.error(err);
     } finally {
       setIsChecking(false);

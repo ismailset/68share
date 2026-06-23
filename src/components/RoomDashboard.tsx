@@ -90,7 +90,7 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
 
       if (diff <= 0) {
         setTimeLeft('00:00:00');
-        alert('This room has reached its duration limits and has expired.');
+        toast('This room has reached its duration limits and has expired.', 'warning', 5000);
         onLeave();
         return;
       }

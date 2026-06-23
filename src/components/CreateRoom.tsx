@@ -37,8 +37,9 @@ export function CreateRoom({ onClose, onRoomCreated }: CreateRoomProps) {
       const room = await dbCreateRoom(roomName, duration, finalPassword);
       setCreatedRoom(room);
       setStage('success');
-    } catch (err) {
-      toast('Failed to generate sharing room. Try again.', 'error');
+    } catch (err: any) {
+      console.error('Room Creation Error details:', err);
+      toast(`Failed to generate sharing room: ${err?.message || err || 'Unknown Error'}`, 'error', 5000);
     } finally {
       setIsGenerating(false);
     }

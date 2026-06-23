@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBBCaFO7ROBt5RPOIDTwXx3mHBWZg1POHA",
@@ -13,5 +13,7 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore with the specific database ID from the config (it uses a non-default database id: "ai-studio-8d94d414-404c-4149-9e38-6a6165d13f8b")
-export const db = getFirestore(app, "ai-studio-8d94d414-404c-4149-9e38-6a6165d13f8b");
+// Initialize Firestore with specific custom database ID and robust long polling forced connection
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+}, "ai-studio-8d94d414-404c-4149-9e38-6a6165d13f8b");
