@@ -8,6 +8,8 @@ export interface SharedFile {
   uploadedAt: string;
   uploader: string;
   dataUrl?: string; // Base64 content for real download/preview (optional/large-file warning capped)
+  isChunked?: boolean;
+  chunkCount?: number;
 }
 
 export interface ActivityItem {

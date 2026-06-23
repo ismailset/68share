@@ -186,43 +186,22 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
     setIsUploading(true);
     setUploadError(null);
 
+    const maxCapacity = 25 * 1024 * 1024; // 25MB limit for chunked uploader
+    if (file.size > maxCapacity) {
+      setUploadError(`File is too large (${formatBytes(file.size)}). Max limit is 25MB.`);
+      toast(`File is too large. Max limit is 25MB.`, 'error');
+      setIsUploading(false);
+      return;
+    }
+
     try {
-      const maxCapacity = 700 * 1024; // 700KB limit for physical Firestore base64
-      if (file.size > maxCapacity) {
-        // Broadcast the file metadata to Firestore so all active devices get updated catalogs instantly
-        const fileId = crypto.randomUUID();
-        const uploader = getDeviceName();
-        const fallbackFile: SharedFile = {
-          id: fileId,
-          name: file.name,
-          size: file.size,
-          type: file.type || 'application/octet-stream',
-          uploadedAt: new Date().toISOString(),
-          uploader,
-        };
-
-        const activityItem: ActivityItem = {
-          id: crypto.randomUUID(),
-          timestamp: new Date().toISOString(),
-          type: 'upload',
-          details: `${uploader} uploaded "${file.name}" (${formatBytes(file.size)}). [Direct Tunnel Link]`,
-        };
-
-        const updatedRoom = {
-          ...room,
-          files: [fallbackFile, ...room.files],
-          activity: [activityItem, ...room.activity]
-        };
-        await dbUpdateRoom(updatedRoom);
-        toast(`Broadcasted file metadata: "${file.name}" is visible to all other connected screens.`, 'success', 4000);
-      } else {
-        const parsed = await dbUploadFileToRoom(room.code, file);
-        if (parsed) {
-          toast(`Successfully uploaded & synced secure cluster: "${file.name}"!`, 'success');
-        }
+      const parsed = await dbUploadFileToRoom(room.code, file);
+      if (parsed) {
+        toast(`Successfully uploaded & shared "${file.name}"!`, 'success');
       }
-    } catch (err) {
-      setUploadError('Failed to broadcast file across cluster.');
+    } catch (err: any) {
+      console.error(err);
+      setUploadError(err?.message || 'Failed to complete cloud transfer.');
       toast('Failed to upload file.', 'error');
     } finally {
       setIsUploading(false);
@@ -334,39 +313,39 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
     <section className="py-8 max-w-5xl mx-auto px-4 md:px-6 relative z-10 font-sans">
       
       {/* Top dashboard control header bar */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-b border-neutral-200/80 pb-6 mb-8">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-6 border-b border-neutral-205/60 pb-6 mb-8">
+        <div className="flex items-center gap-4">
           <button 
             onClick={onLeave}
             className="p-2.5 rounded-full border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-500 hover:text-neutral-800 transition-colors cursor-pointer shadow-sm flex items-center justify-center shrink-0"
-            title="Leave Room"
+            title="Go Back"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div className="relative text-left">
-            <h1 className="text-xl md:text-2xl font-serif font-bold text-neutral-950 tracking-wide">{room.name}</h1>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <span className="text-[10px] font-sans font-bold tracking-wider text-neutral-400 uppercase">ROOM CODE:</span>
-              <span className="font-mono text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">{room.code}</span>
+          <div className="text-left">
+            <h1 className="text-2xl font-bold text-neutral-900 tracking-tight leading-tight">{room.name}</h1>
+            <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+              <span className="text-[10px] font-sans font-bold tracking-wider text-neutral-400 uppercase">Room Code</span>
+              <span className="font-mono text-xs font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">{room.code}</span>
               
               <button 
                 onClick={handleCopyCode}
-                className="text-xs text-neutral-400 hover:text-neutral-700 font-medium flex items-center gap-1 font-sans cursor-pointer transition-colors"
-                title="Copy Room Code"
+                className="text-xs text-neutral-500 hover:text-neutral-800 font-medium flex items-center gap-1 font-sans cursor-pointer transition-colors"
+                title="Copy Code"
               >
-                {copiedCode ? <Check className="w-3 h-3 text-emerald-600" /> : <Clipboard className="w-3 h-3" />}
+                {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Clipboard className="w-3.5 h-3.5" />}
                 <span>{copiedCode ? 'Copied' : 'Copy'}</span>
               </button>
 
-              <span className="text-neutral-200">|</span>
+              <span className="text-neutral-300">|</span>
 
               <button 
                 onClick={() => setShowHeaderQr(!showHeaderQr)}
-                className="text-xs text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1 font-sans cursor-pointer transition-colors"
+                className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold flex items-center gap-1 font-sans cursor-pointer transition-colors"
                 aria-expanded={showHeaderQr}
               >
-                <QrCode className="w-3 h-3" />
-                <span>{showHeaderQr ? 'Hide QR' : 'Share QR'}</span>
+                <QrCode className="w-3.5 h-3.5" />
+                <span>{showHeaderQr ? 'Hide QR' : 'Share QR Code'}</span>
               </button>
             </div>
 
@@ -378,62 +357,56 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
                   transition={{ duration: 0.2 }}
-                  className="absolute left-0 mt-3 z-50 bg-white border border-neutral-200/80 rounded-3xl p-5 shadow-2xl w-[320px] text-left"
+                  className="absolute left-0 mt-3 z-50 bg-white border border-neutral-200 shadow-xl rounded-2xl p-5 w-[300px] text-left"
                 >
-                  <div className="flex items-center justify-between border-b border-neutral-100 pb-2.5 mb-3.5">
+                  <div className="flex items-center justify-between border-b border-neutral-100 pb-2 mb-3">
                     <div className="flex items-center gap-2">
-                      <QrCode className="w-4 h-4 text-blue-600" />
-                      <span className="font-sans font-bold text-neutral-900 text-sm">Scan to Join Room</span>
+                      <QrCode className="w-4 h-4 text-indigo-600" />
+                      <span className="font-sans font-semibold text-neutral-800 text-sm">Join via QR Code</span>
                     </div>
-                    <button 
-                      onClick={() => setShowHeaderQr(false)}
-                      className="text-neutral-400 hover:text-neutral-600 text-[11px] font-medium cursor-pointer"
-                    >
-                      Close
-                    </button>
                   </div>
 
                   <div className="flex flex-col items-center">
-                    {/* Interactive Color Swatches */}
-                    <div className="flex items-center gap-1.5 mb-3.5 bg-neutral-50 px-2 py-1 rounded-full border border-black/5">
-                      <span className="text-[9px] font-sans font-bold text-neutral-400 tracking-wider uppercase mr-1">Tweak:</span>
+                    {/* Interactive Color Settings */}
+                    <div className="flex items-center gap-1.5 mb-3 bg-neutral-50 px-2.5 py-1 rounded-full border border-neutral-100">
+                      <span className="text-[9px] font-sans font-bold text-neutral-400 tracking-wider uppercase mr-1">Color:</span>
                       {[
                         { name: 'Blue', hex: '2563eb', bg: 'bg-blue-600' },
-                        { name: 'Dark', hex: '111111', bg: 'bg-neutral-950' },
+                        { name: 'Dark', hex: '111111', bg: 'bg-neutral-900' },
                         { name: 'Emerald', hex: '059669', bg: 'bg-emerald-600' },
                         { name: 'Amber', hex: 'ea580c', bg: 'bg-amber-600' },
                       ].map((swatch) => (
                         <button
                           key={swatch.name}
                           onClick={() => setQrColorCode(swatch.hex)}
-                          className={`w-4 h-4 rounded-full cursor-pointer transition-all ${swatch.bg} ${
+                          className={`w-3.5 h-3.5 rounded-full cursor-pointer transition-all ${swatch.bg} ${
                             qrColorCode === swatch.hex ? 'ring-2 ring-indigo-500 scale-110' : 'border border-white hover:scale-105'
                           }`}
                         />
                       ))}
                     </div>
 
-                    {/* QR Code Graphic Area */}
-                    <div className="bg-white p-2.5 rounded-2xl border border-neutral-200/80 shadow-md flex items-center justify-center mb-4">
+                    {/* QR Code */}
+                    <div className="bg-white p-2 rounded-xl border border-neutral-200 flex items-center justify-center mb-3">
                       <img 
                         src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&color=${qrColorCode}&bgcolor=ffffff&data=${encodeURIComponent(getShareUrl())}`} 
                         alt="Join Room QR Code" 
-                        className="w-36 h-36 select-none"
+                        className="w-32 h-32 select-none"
                         referrerPolicy="no-referrer"
                       />
                     </div>
 
-                    {/* Download & Copy links */}
-                    <div className="w-full flex gap-2 border-t border-neutral-100 pt-3">
+                    {/* Actions */}
+                    <div className="w-full flex gap-2 border-t border-neutral-100 pt-2.5">
                       <button
                         onClick={() => {
                           const customUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=${qrColorCode}&bgcolor=ffffff&data=${encodeURIComponent(getShareUrl())}`;
                           window.open(customUrl, '_blank');
                         }}
-                        className="flex-1 bg-white hover:bg-neutral-50 text-neutral-700 border border-neutral-200 py-1.5 px-2 rounded-xl font-sans text-xs font-semibold tracking-tight transition-all active:scale-98 flex items-center justify-center gap-1 cursor-pointer text-center"
+                        className="flex-1 bg-white hover:bg-neutral-50 text-neutral-700 border border-neutral-200 py-1.5 rounded-xl font-sans text-xs font-semibold select-none cursor-pointer transition-colors text-center shadow-xs flex items-center justify-center gap-1"
                       >
-                        <Download className="w-3 h-3 text-neutral-500" />
-                        <span>Save QR</span>
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Save Image</span>
                       </button>
 
                       <button
@@ -442,9 +415,9 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
                           setCopiedQrLink(true);
                           setTimeout(() => setCopiedQrLink(false), 2000);
                         }}
-                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-1.5 px-2 rounded-xl font-sans text-xs font-semibold tracking-tight transition-all active:scale-98 flex items-center justify-center gap-1 cursor-pointer text-center"
+                        className="flex-1 bg-indigo-600 hover:bg-indigo-750 text-white py-1.5 rounded-xl font-sans text-xs font-semibold select-none cursor-pointer transition-colors text-center shadow-xs flex items-center justify-center gap-1"
                       >
-                        {copiedQrLink ? <Check className="w-3 h-3" /> : <Clipboard className="w-3 h-3" />}
+                        {copiedQrLink ? <Check className="w-3.5 h-3.5" /> : <Clipboard className="w-3.5 h-3.5" />}
                         <span>{copiedQrLink ? 'Copied' : 'Copy link'}</span>
                       </button>
                     </div>
@@ -455,31 +428,23 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
           </div>
         </div>
 
-        {/* Sync panel telemetry elements */}
-        <div className="flex items-center gap-3 bg-neutral-50 border border-neutral-200/65 rounded-2xl p-2.5 shrink-0 self-start md:self-auto flex-wrap text-left shadow-sm">
+        {/* Status Indicators */}
+        <div className="flex items-center gap-4 bg-white border border-neutral-200 rounded-2xl p-3 shrink-0 self-start md:self-auto flex-wrap sm:flex-nowrap shadow-xs md:max-w-md">
           
-          <div className="flex items-center gap-2 border-r border-neutral-250 pr-3.5">
-            <span className="relative flex h-2 w-2">
+          <div className="flex items-center gap-2 border-r border-neutral-200 pr-4 shrink-0">
+            <span className="relative flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
             </span>
-            <span className="text-[11px] font-mono font-bold uppercase text-neutral-600 flex items-center gap-1">
-              <Users className="w-3.5 h-3.5 text-neutral-400" />
-              <span>{room.usersOnline || 1} Screen{room.usersOnline > 1 ? 's' : ''} Online</span>
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 border-r border-neutral-250 pr-3.5">
-            <Clock className="w-3.5 h-3.5 text-[#EAB308]" />
-            <span className="font-mono text-[11px] font-bold text-neutral-700 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-xs">
-              EXPIRES: {timeLeft}
+            <span className="text-xs font-sans font-semibold text-neutral-600">
+              {room.usersOnline || 1} Screen{room.usersOnline > 1 ? 's' : ''} Connected
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-indigo-500 inline-block animate-pulse" />
-            <span className="text-[11px] font-sans font-bold text-neutral-500 tracking-tight" title="Auto-deletes to protect privacy">
-              Active Sync Guard
+          <div className="flex items-center gap-1 px-3 py-1 bg-amber-50 border border-amber-200/50 rounded-xl">
+            <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="font-mono text-xs font-bold text-amber-700">
+              Expires: {timeLeft}
             </span>
           </div>
 
@@ -489,19 +454,19 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
       {/* Main split dashboard area */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
         
-        {/* Left Interactive Zone: File uploads & files shelf */}
+        {/* Left Columns: Upload area & file listing */}
         <div className="lg:col-span-8 flex flex-col gap-6">
           
-          {/* Draggable Active Upload Zone */}
+          {/* Active Upload Zone */}
           <div 
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             onClick={triggerSelectFile}
-            className={`cursor-pointer group relative p-8 md:p-11 border-2 border-dashed rounded-3xl flex flex-col items-center text-center transition-all ${
+            className={`cursor-pointer group relative p-8 md:p-10 border-2 border-dashed rounded-3xl flex flex-col items-center text-center transition-all ${
               isDragging 
-                ? 'border-blue-600 bg-blue-50/20' 
-                : 'border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-xl hover:shadow-neutral-100/50'
+                ? 'border-indigo-500 bg-indigo-50/10' 
+                : 'border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-md'
             }`}
           >
             <input 
@@ -511,101 +476,91 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
               className="hidden"
             />
             
-            <div className="w-12 h-12 rounded-2xl bg-[#FAFAFA] border border-neutral-200/85 flex items-center justify-center text-neutral-600 group-hover:scale-105 transition-transform duration-300">
-              <UploadCloud className="w-6 h-6 text-blue-600" />
+            <div className="w-12 h-12 rounded-2xl bg-neutral-50 border border-neutral-150 flex items-center justify-center text-neutral-500 group-hover:scale-105 transition-transform duration-300">
+              <UploadCloud className="w-6 h-6 text-indigo-600 animate-pulse" />
             </div>
 
-            <h3 className="font-sans font-bold text-neutral-900 mt-4 text-[15px] tracking-wide">
-              {isUploading ? 'Registering file transmission...' : 'Drag & Drop files here'}
+            <h3 className="font-sans font-bold text-neutral-800 mt-4 text-[15px] tracking-tight">
+              {isUploading ? 'Uploading file...' : 'Drag & Drop files here'}
             </h3>
             
-            <p className="font-sans text-xs text-neutral-500 mt-1 max-w-[280px]">
+            <p className="font-sans text-xs text-neutral-500 mt-1 max-w-[320px]">
               {isUploading 
-                ? 'Writing files directly to active synchronizer cluster...' 
-                : 'or click to browse local files. Supports images, zipped logs, docs, and datasets.'}
+                ? 'Uploading file segments and syncing across all connected screens...' 
+                : 'or click to browse local files. Supports images, archives, datasets, videos and documents up to 25MB.'}
             </p>
-            
-            <div className="mt-4 px-3 py-1 bg-[#FAFAFA] border border-black/5 rounded-full inline-flex items-center gap-1.5 text-[10px] font-sans font-semibold text-[#666666]">
-              <ShieldAlert className="w-3.5 h-3.5 text-indigo-500" />
-              <span>Capped up to 700KB for cloud sync, larger simulated sync</span>
-            </div>
 
             {uploadError && (
-              <p className="text-red-600 text-xs mt-3 font-sans font-semibold flex items-center gap-1 bg-red-50 px-3 py-1.5 rounded-lg border border-red-100">
-                <AlertTriangle className="w-3.5 h-3.5" />
+              <p className="text-red-600 text-xs mt-3 font-sans font-semibold flex items-center gap-1 bg-red-50 px-3 py-1.5 rounded-lg border border-red-100 animate-bounce">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                 {uploadError}
               </p>
             )}
           </div>
 
-          {/* Shared Files Grid Layout - BENTO STYLE */}
-          <div className="bg-white border border-neutral-200/80 rounded-3xl p-6 shadow-xs text-left">
-            <h2 className="text-sm font-sans font-bold text-neutral-900 tracking-wide uppercase mb-4 flex items-center gap-2">
-              <File className="w-4.5 h-4.5 text-blue-600" />
-              <span>Room Shelf Catalog ({room.files.length} Item{room.files.length === 1 ? '' : 's'})</span>
+          {/* Shared Files Grid Layout */}
+          <div className="bg-white border border-neutral-200/90 rounded-3xl p-6 shadow-sm text-left">
+            <h2 className="text-sm font-sans font-extrabold text-neutral-800 tracking-wider uppercase mb-5 flex items-center gap-2">
+              <File className="w-4 h-4 text-indigo-600" />
+              <span>Shared Files Catalog ({room.files.length})</span>
             </h2>
 
             {room.files.length === 0 ? (
-              <div className="py-16 text-center rounded-2xl bg-[#FAFAFA] border border-black/5">
-                <File className="w-8 h-8 text-neutral-350 mx-auto mb-2" />
-                <h4 className="font-sans font-semibold text-xs text-neutral-800">Shelf Catalog is Empty</h4>
-                <p className="font-sans text-[11px] text-neutral-500 mt-1">Files dropped here will pop up on any connected computer instantly!</p>
+              <div className="py-20 text-center rounded-2xl bg-neutral-50/50 border border-neutral-100">
+                <File className="w-10 h-10 text-neutral-300 mx-auto mb-3" />
+                <h4 className="font-sans font-semibold text-sm text-neutral-700">No files uploaded yet</h4>
+                <p className="font-sans text-xs text-neutral-500 mt-1 max-w-[285px] mx-auto">
+                  Files dragged and uploaded to this room will immediately pop up for download on all other connected devices.
+                </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1">
                 <AnimatePresence initial={false}>
                   {room.files.map((file) => {
-                    const isBulky = !file.dataUrl;
                     const visualTheme = getFileStyleAndIcon(file.name);
                     
                     return (
                       <motion.div 
-                        initial={{ opacity: 0, scale: 0.96 }}
+                        initial={{ opacity: 0, scale: 0.97 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, x: -10 }}
                         key={file.id}
-                        className="p-4 bg-white hover:bg-neutral-50/50 border border-neutral-200 rounded-2xl flex flex-col justify-between gap-3.5 transition-all hover:shadow-md hover:border-neutral-300"
+                        className="p-4 bg-white border border-neutral-150 hover:border-neutral-300 rounded-2xl flex flex-col justify-between gap-4 transition-all hover:shadow-xs group"
                       >
                         <div className="flex items-start gap-3">
-                          {/* File Type Badge */}
                           <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${visualTheme.bg}`}>
                             {visualTheme.icon}
                           </div>
                           
                           <div className="min-w-0 text-left flex-grow">
-                            <h4 className="text-xs font-sans font-bold text-neutral-900 truncate pr-0.5" title={file.name}>
+                            <h4 className="text-xs font-sans font-bold text-neutral-800 truncate pr-0.5 group-hover:text-indigo-650 transition-colors" title={file.name}>
                               {file.name}
                             </h4>
-                            <p className="text-[10px] font-sans font-medium text-neutral-400 uppercase tracking-tight mt-0.5">
+                            <p className="text-[10px] font-sans font-semibold text-neutral-400 uppercase tracking-wider mt-0.5">
                               {visualTheme.label}
                             </p>
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between border-t border-neutral-150 pt-3 relative z-10">
-                          <div className="text-[10px] font-mono text-neutral-500 flex flex-col">
-                            <span className="font-semibold text-neutral-700">{formatBytes(file.size)}</span>
-                            <span className="text-neutral-400 mt-0.5 truncate max-w-[125px]">By: {file.uploader}</span>
+                        <div className="flex items-center justify-between border-t border-neutral-100 pt-3 relative z-10">
+                          <div className="text-[10px] font-sans text-neutral-500 flex flex-col">
+                            <span className="font-bold text-neutral-700 font-mono">{formatBytes(file.size)}</span>
+                            <span className="text-neutral-400 mt-0.5 truncate max-w-[130px]" title={`Uploaded by ${file.uploader}`}>
+                              By: {file.uploader}
+                            </span>
                           </div>
 
-                          <div className="flex items-center gap-1.5">
-                            {isBulky && (
-                              <span className="text-[9px] font-sans font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 uppercase mr-1" title="Size exceeded normal cache cap. Transferred via direct proxy simulation.">
-                                Proxy Sync
-                              </span>
-                            )}
-                            <button 
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                toast(`Initiating download: "${file.name}"`, 'success', 2000);
-                                await dbTriggerDownload(file, roomCode);
-                              }}
-                              className="bg-blue-600 hover:bg-blue-700 text-white w-7.5 h-7.5 rounded-lg flex items-center justify-center transition-colors shadow-xs cursor-pointer"
-                              title="Download Segment"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                          <button 
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              toast(`Downloading "${file.name}"...`, 'success', 2000);
+                              await dbTriggerDownload(file, roomCode);
+                            }}
+                            className="bg-indigo-600 hover:bg-indigo-750 text-white w-8 h-8 rounded-xl flex items-center justify-center transition-all select-none shadow-xs hover:scale-105 cursor-pointer"
+                            title="Download File"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
                         </div>
                       </motion.div>
                     );
@@ -617,84 +572,83 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
 
         </div>
 
-        {/* Right Columns: QR utilities & logging activities */}
+        {/* Right Columns: Share utilities & Activity logs */}
         <div className="lg:col-span-4 flex flex-col gap-6">
           
-          {/* Share widget card */}
-          <div className="bg-white border border-neutral-200/80 rounded-3xl p-5 shadow-sm text-left relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/5 rounded-full blur-2xl pointer-events-none" />
-            
-            <h3 className="font-sans font-bold text-neutral-900 text-xs tracking-wider uppercase mb-3.5 text-neutral-400">Share Information</h3>
+          {/* Share widgets */}
+          <div className="bg-white border border-neutral-200/90 rounded-3xl p-5 shadow-sm text-left relative overflow-hidden">
+            <h3 className="font-sans font-bold text-neutral-400 text-[10px] tracking-wider uppercase mb-3.5">Room Accessories</h3>
             
             <div className="flex flex-col gap-3">
               <button 
                 onClick={handleCopyLink}
-                className="w-full bg-[#FAFAFA] hover:bg-neutral-100 border border-neutral-200 rounded-xl p-2.5 px-3 flex items-center justify-between text-left transition-all active:scale-[0.99] cursor-pointer"
+                className="w-full bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-xl p-2.5 px-3 flex items-center justify-between text-left transition-all active:scale-[0.99] cursor-pointer group"
               >
                 <div className="truncate pr-2">
-                  <span className="text-[9px] font-mono text-neutral-400 uppercase block leading-none mb-1 font-semibold">Share Web Link</span>
-                  <span className="text-xs text-neutral-800 font-sans truncate block max-w-[200px]">{getShareUrl()}</span>
+                  <span className="text-[9px] font-sans text-neutral-400 uppercase block leading-none mb-1 font-bold">Copy Room Join URL</span>
+                  <span className="text-xs text-neutral-700 font-mono truncate block max-w-[180px]">{getShareUrl()}</span>
                 </div>
-                <div className="shrink-0 p-1.5 bg-white rounded-lg border border-neutral-200">
+                <div className="shrink-0 p-1.5 bg-white rounded-lg border border-neutral-200 shadow-3xs group-hover:border-neutral-300 transition-colors">
                   {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Clipboard className="w-3.5 h-3.5 text-neutral-500" />}
                 </div>
               </button>
 
               {/* QR expander */}
-              <div className="border border-black/5 rounded-xl p-3 bg-neutral-50/50">
+              <div className="border border-neutral-150 rounded-xl p-3 bg-white shadow-3xs">
                 <button
                   onClick={() => setShowQr(!showQr)}
-                  className="w-full font-sans text-xs font-semibold text-neutral-700 hover:text-neutral-950 flex items-center justify-between cursor-pointer"
+                  className="w-full font-sans text-xs font-semibold text-neutral-600 hover:text-neutral-850 flex items-center justify-between cursor-pointer"
                 >
-                  <span className="flex items-center gap-1.5">
-                    <QrCode className="w-4 h-4 text-blue-600" />
-                    <span>{showQr ? 'Hide Large QR' : 'Display Room QR'}</span>
+                  <span className="flex items-center gap-2">
+                    <QrCode className="w-4 h-4 text-indigo-600" />
+                    <span>{showQr ? 'Hide Large QR Code' : 'Display QR Code'}</span>
                   </span>
-                  <span>{showQr ? 'Close' : 'Expand'}</span>
+                  <span className="text-[10px] uppercase font-bold text-neutral-400">{showQr ? 'Close' : 'View'}</span>
                 </button>
 
                 {showQr && (
                   <motion.div 
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
-                    className="flex flex-col items-center gap-3.5 mt-3 border-t border-neutral-200/50 pt-3"
+                    className="flex flex-col items-center gap-3 mt-3 border-t border-neutral-100 pt-3"
                   >
-                    <div className="bg-white p-2.5 rounded-xl border border-neutral-200 shadow-sm">
+                    <div className="bg-white p-2 rounded-xl border border-neutral-150 flex items-center justify-center">
                       <img 
                         src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&color=${qrColorCode}&bgcolor=ffffff&data=${encodeURIComponent(getShareUrl())}`} 
                         alt="Room QR Code" 
-                        className="w-28 h-28 select-none"
+                        className="w-24 h-24 select-none"
                         referrerPolicy="no-referrer"
                       />
                     </div>
-                    <span className="text-[10px] text-neutral-500 font-sans text-center max-w-[180px]">Point any mobile camera at this code to join instantly.</span>
+                    <span className="text-[10px] text-neutral-500 font-sans text-center max-w-[180px] leading-tight">
+                      Scan this code with an external device to connect to this room space instantly.
+                    </span>
                   </motion.div>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Activity Feed terminal widget */}
-          <div className="bg-neutral-950 text-white border border-neutral-900 rounded-3xl p-5 shadow-2xl flex flex-col justify-between flex-grow min-h-[360px]">
+          {/* Activity Logs (Professional activity card) */}
+          <div className="bg-white border border-neutral-200/90 rounded-3xl p-5 shadow-xs flex flex-col justify-between flex-grow min-h-[340px]">
             <div>
-              <div className="flex items-center justify-between border-b border-neutral-900 pb-3 mb-4">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-400">Broadcaster Terminal</span>
-                </div>
-                <span className="font-mono text-[9px] text-neutral-600">68SHARE OS v1.1</span>
+              <div className="flex items-center justify-between border-b border-neutral-100 pb-3 mb-4">
+                <span className="text-[10px] font-sans font-bold uppercase tracking-wider text-neutral-400">Activity & Events Log</span>
+                <span className="text-[9px] font-mono font-medium text-neutral-400 bg-neutral-100 px-1.5 py-0.5 rounded uppercase border border-neutral-200">Real-time</span>
               </div>
 
-              <div id="activity-console" className="flex flex-col gap-2.5 max-h-[260px] overflow-y-auto pr-1">
+              <div id="activity-console" className="flex flex-col gap-3 max-h-[220px] overflow-y-auto pr-1">
                 {room.activity.map((act) => (
-                  <div key={act.id} className="text-left leading-normal font-mono text-[10.5px]">
-                    <span className="text-neutral-600 mr-2">[{new Date(act.timestamp).toLocaleTimeString()}]</span>
-                    <span className={
-                      act.type === 'upload' ? 'text-amber-400' 
-                      : act.type === 'download' ? 'text-blue-400'
-                      : act.type === 'leave' ? 'text-red-400'
-                      : 'text-neutral-300'
-                    }>
+                  <div key={act.id} className="text-left leading-relaxed font-sans text-xs flex gap-2">
+                    <span className="text-neutral-400 font-mono text-[10px] shrink-0">
+                      {new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                    <span className={`font-medium ${
+                      act.type === 'upload' ? 'text-indigo-600' 
+                      : act.type === 'download' ? 'text-blue-600'
+                      : act.type === 'leave' ? 'text-rose-650'
+                      : 'text-neutral-700'
+                    }`}>
                       {act.details}
                     </span>
                   </div>
@@ -702,8 +656,8 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
               </div>
             </div>
 
-            <div className="border-t border-neutral-900 pt-3 mt-4 text-center font-mono text-[9px] text-neutral-600">
-              Live listener awaiting room actions...
+            <div className="border-t border-neutral-100 pt-3 mt-4 text-center font-sans text-[10px] text-neutral-400 font-medium">
+              Listening for events details and device syncs...
             </div>
           </div>
 
