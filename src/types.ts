@@ -40,4 +40,11 @@ export interface Room {
   clipboardText?: string;
   clipboardHistory?: ClipboardEntry[];
   defaultTab?: 'files' | 'clipboard';
+  activeUsers?: ActiveUser[];
+}
+
+export interface ActiveUser {
+  id: string;
+  deviceName: string;
+  joinedAt: string;
 }

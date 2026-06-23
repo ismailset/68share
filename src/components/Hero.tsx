@@ -119,14 +119,6 @@ export function Hero({ onCreateRoom, onJoinRoom }: HeroProps) {
                   <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                 </button>
 
-                <button
-                  onClick={() => onCreateRoom('clipboard')}
-                  className="w-full sm:w-auto bg-[#F1F5F9] hover:bg-[#E2E8F0] text-neutral-800 border border-neutral-200/50 py-3.5 px-8 rounded-full font-sans font-semibold text-[15px] transition-all cursor-pointer shadow-sm active:scale-[0.98] flex items-center justify-center gap-2"
-                >
-                  <Clipboard className="w-4 h-4 text-[#2563EB]" />
-                  <span>Create Clipboard Room</span>
-                </button>
-
                 {!showInput ? (
                   <button
                     onClick={() => setShowInput(true)}

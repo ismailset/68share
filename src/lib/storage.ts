@@ -129,7 +129,14 @@ export async function dbCreateRoom(
     lastActiveAt: now.toISOString(),
     clipboardText: '',
     clipboardHistory: [],
-    defaultTab: defaultTab || 'files'
+    defaultTab: defaultTab || 'files',
+    activeUsers: [
+      {
+        id: crypto.randomUUID(),
+        deviceName: getDeviceName(),
+        joinedAt: now.toISOString()
+      }
+    ]
   };
 
   // 1. Store locally immediately

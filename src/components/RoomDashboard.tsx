@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   QrCode, Clipboard, Check, Users, Clock, UploadCloud, File, Download, 
-  ShieldAlert, ArrowLeft, Lock, AlertTriangle, RefreshCw, FileText, Image as ImageIcon, Film, Archive
+  ShieldAlert, ArrowLeft, Lock, AlertTriangle, RefreshCw, FileText, Image as ImageIcon, Film, Archive,
+  Laptop, Smartphone, Tablet, Monitor
 } from 'lucide-react';
 import { Room, SharedFile, ActivityItem } from '../types';
 import { 
@@ -39,6 +40,7 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
   
   const lastKnownClipboardTextRef = useRef<string | undefined>(undefined);
   const hasInitializedTabRef = useRef(false);
+  const sessionIdRef = useRef(crypto.randomUUID());
 
   // Synchronize initial active tab with room focus
   useEffect(() => {
@@ -86,9 +88,27 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
           setIsAuthenticated(false);
         }
         
-        // Increment online users count
         const updated = { ...active };
-        updated.usersOnline = (updated.usersOnline || 0) + 1;
+        const mySessionId = sessionIdRef.current;
+        const myDeviceName = getDeviceName();
+        
+        // Ensure activeUsers list exists, prune dead entries (>24hr old), and add current session
+        const existingUsers = updated.activeUsers || [];
+        const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+        const filteredUsers = existingUsers.filter(u => {
+          const joinedTime = new Date(u.joinedAt).getTime();
+          return u.id !== mySessionId && joinedTime > oneDayAgo;
+        });
+        
+        updated.activeUsers = [
+          ...filteredUsers,
+          {
+            id: mySessionId,
+            deviceName: myDeviceName,
+            joinedAt: new Date().toISOString()
+          }
+        ];
+        updated.usersOnline = updated.activeUsers.length;
         dbUpdateRoom(updated);
       }
     }).catch(err => {
@@ -97,15 +117,19 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
 
     return () => {
       unsubscribe();
-      // Decrement online users count upon exiting
+      // Remove current session upon exiting
       dbGetRoom(uppercaseCode).then((active) => {
         if (active) {
           const updated = { ...active };
-          updated.usersOnline = Math.max(1, (updated.usersOnline || 1) - 1);
+          const mySessionId = sessionIdRef.current;
+          
+          const existingUsers = updated.activeUsers || [];
+          updated.activeUsers = existingUsers.filter(u => u.id !== mySessionId);
+          updated.usersOnline = Math.max(1, updated.activeUsers.length);
           dbUpdateRoom(updated).catch(e => console.error(e));
         }
       }).catch(err => {
-        console.error("Error decrementing online users:", err);
+        console.error("Error removing session from active users:", err);
       });
     };
   }, [roomCode]);
@@ -340,6 +364,35 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
     );
   }
 
+  const getDeviceIcon = (name: string) => {
+    const lowercase = name.toLowerCase();
+    if (lowercase.includes('macbook') || lowercase.includes('dell') || lowercase.includes('thinkpad') || lowercase.includes('laptop')) {
+      return <Laptop className="w-4 h-4 text-[#2563EB]" />;
+    }
+    if (lowercase.includes('iphone') || lowercase.includes('pixel') || lowercase.includes('galaxy') || lowercase.includes('phone')) {
+      return <Smartphone className="w-4 h-4 text-[#2563EB]" />;
+    }
+    if (lowercase.includes('ipad') || lowercase.includes('tablet')) {
+      return <Tablet className="w-4 h-4 text-[#2563EB]" />;
+    }
+    return <Monitor className="w-4 h-4 text-[#2563EB]" />;
+  };
+
+  const formatJoinedTime = (isoString: string) => {
+    try {
+      const joined = new Date(isoString).getTime();
+      const diff = Date.now() - joined;
+      if (diff < 60000) return 'Just joined';
+      const minutes = Math.floor(diff / 60000);
+      if (minutes < 60) return `${minutes}m ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours}h ago`;
+      return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      return 'Joined';
+    }
+  };
+
   return (
     <section className="py-8 max-w-5xl mx-auto px-4 md:px-6 relative z-10 font-sans">
       
@@ -468,7 +521,7 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
             </span>
             <span className="text-xs font-sans font-semibold text-neutral-600">
-              {room.usersOnline || 1} Screen{room.usersOnline > 1 ? 's' : ''} Connected
+              {room.activeUsers?.length || room.usersOnline || 1} Screen{(room.activeUsers?.length || room.usersOnline || 1) > 1 ? 's' : ''} Connected
             </span>
           </div>
 
@@ -689,6 +742,83 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
                   </motion.div>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* Connected Screens (Real-time active users indicator) */}
+          <div className="bg-white border border-neutral-200/90 rounded-3xl p-5 shadow-sm text-left">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3 mb-4">
+              <span className="text-[10px] font-sans font-bold uppercase tracking-wider text-neutral-400">Connected Screens</span>
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200/30 text-[9.5px] font-sans font-extrabold text-emerald-600 uppercase tracking-wide">
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping shrink-0" />
+                <span>{room.activeUsers?.length || room.usersOnline || 1} Live</span>
+              </span>
+            </div>
+
+            <div className="flex flex-col gap-2.5 max-h-[220px] overflow-y-auto pr-1">
+              {room.activeUsers && room.activeUsers.length > 0 ? (
+                room.activeUsers.map((u, idx) => {
+                  const isMe = u.deviceName === getDeviceName();
+                  return (
+                    <div 
+                      key={u.id || idx}
+                      className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${
+                        isMe 
+                          ? 'bg-blue-50/10 border-blue-100' 
+                          : 'bg-neutral-50/25 border-neutral-150 hover:border-neutral-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                          isMe ? 'bg-blue-100/40 text-blue-600' : 'bg-neutral-100 text-neutral-500'
+                        }`}>
+                          {getDeviceIcon(u.deviceName)}
+                        </div>
+                        <div className="min-w-0 text-left">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-[11px] font-sans truncate block max-w-[120px] ${
+                              isMe ? 'font-bold text-blue-800' : 'font-semibold text-neutral-700'
+                            }`} title={u.deviceName}>
+                              {u.deviceName}
+                            </span>
+                            {isMe && (
+                              <span className="px-1.5 py-0.5 bg-blue-100 text-[8px] font-sans font-extrabold uppercase rounded text-blue-700 border border-blue-200/40 shrink-0">
+                                You
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[9.5px] font-sans font-semibold text-neutral-400 block mt-0.5">
+                            {formatJoinedTime(u.joinedAt)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-xs" />
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="flex items-center justify-between p-3 rounded-2xl border bg-blue-50/10 border-blue-100">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-blue-100/40 text-blue-600">
+                      {getDeviceIcon(getDeviceName())}
+                    </div>
+                    <div className="min-w-0 text-left">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-sans font-bold text-blue-800 truncate block max-w-[120px]">
+                          {getDeviceName()}
+                        </span>
+                        <span className="px-1.5 py-0.5 bg-blue-100 text-[8px] font-sans font-extrabold uppercase rounded text-blue-700 border border-blue-200/40 shrink-0">
+                          You
+                        </span>
+                      </div>
+                      <span className="text-[9.5px] font-sans font-semibold text-neutral-400 block mt-0.5">
+                        Just joined
+                      </span>
+                    </div>
+                  </div>
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-xs" />
+                </div>
+              )}
             </div>
           </div>
 
