@@ -9,6 +9,7 @@ import {
   getRoom, updateRoom, uploadFileToRoom, triggerDownload, 
   formatBytes, getQrCodeUrl, getDeviceName 
 } from '../lib/storage';
+import { useToast } from './Toast';
 
 interface RoomDashboardProps {
   key?: string;
@@ -17,6 +18,7 @@ interface RoomDashboardProps {
 }
 
 export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
+  const { toast } = useToast();
   const [room, setRoom] = useState<Room | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -136,6 +138,7 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
     if (!room) return;
     if (passwordInput === room.password) {
       setIsAuthenticated(true);
+      toast('Shield room unlocked successfully!', 'success');
       
       // Log successful unlock activity
       const updated = { ...room };
@@ -148,6 +151,7 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
       updateRoom(updated);
     } else {
       setPasswordError('Invalid passphrase passcode. Try again!');
+      toast('Invalid passphrase passcode!', 'error');
     }
   };
 
@@ -158,12 +162,14 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
   const handleCopyLink = () => {
     navigator.clipboard.writeText(getShareUrl());
     setCopiedLink(true);
+    toast('Room share link copied to clipboard!', 'success');
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(roomCode);
     setCopiedCode(true);
+    toast(`Room code ${roomCode} copied!`, 'success');
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
@@ -227,6 +233,7 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
       room.activity.unshift(activityItem);
       updateRoom(room);
       setIsUploading(false);
+      toast(`Uploaded "${file.name}" (${formatBytes(file.size)}) via stream simulation!`, 'success');
 
       // Trigger a visual simulation of download for bulky file
       simulateMockReceiverDownload(file.name);
@@ -236,11 +243,13 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
     try {
       const parsed = await uploadFileToRoom(room.code, file);
       if (parsed) {
+        toast(`Successfully uploaded "${file.name}"!`, 'success');
         // Trigger simulated action
         simulateMockReceiverDownload(file.name);
       }
     } catch (err) {
       setUploadError('Failed to parse file upload.');
+      toast('Failed to upload file.', 'error');
     } finally {
       setIsUploading(false);
     }
@@ -471,7 +480,7 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
         </div>
 
         {/* Sync panel telemetry elements */}
-        <div className="flex items-center gap-3.5 bg-neutral-50 border border-neutral-200/50 rounded-2xl p-3 shrink-0 self-start md:self-auto">
+        <div className="flex items-center gap-3.5 bg-neutral-50 border border-neutral-200/50 rounded-2xl p-3 shrink-0 self-start md:self-auto flex-wrap">
           
           <div className="flex items-center gap-1.5 border-r border-neutral-200/60 pr-3">
             <span className="relative flex h-2 w-2">
@@ -484,10 +493,17 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 border-r border-neutral-200/60 pr-3">
             <Clock className="w-3.5 h-3.5 text-amber-500" />
             <span className="font-mono text-[11.5px] font-bold text-neutral-700 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-sm">
               EXPIRES IN: {timeLeft}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-indigo-500 inline-block" />
+            <span className="text-[11px] font-sans font-bold text-neutral-500 uppercase tracking-tight" title="Auto-deletes after 60 mins of inactivity to preserve absolute privacy.">
+              60m Inactivity Guard
             </span>
           </div>
 
@@ -599,7 +615,10 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
 
                         <div className="flex items-center gap-2">
                           <button 
-                            onClick={() => triggerDownload(file)}
+                            onClick={() => {
+                              toast(`Downloading "${file.name}"...`, 'info', 2000);
+                              triggerDownload(file);
+                            }}
                             className="bg-white hover:bg-neutral-100 text-neutral-800 border border-neutral-200 w-8 h-8 rounded-lg flex items-center justify-center transition-colors shadow-sm cursor-pointer"
                             title="Download Segment"
                           >

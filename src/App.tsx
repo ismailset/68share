@@ -9,11 +9,31 @@ import { Footer } from './components/Footer';
 import { CreateRoom } from './components/CreateRoom';
 import { RoomDashboard } from './components/RoomDashboard';
 import { Room } from './types';
-import { getRoom } from './lib/storage';
+import { getRoom, getAllRooms } from './lib/storage';
+import { useToast } from './components/Toast';
 
 export default function App() {
+  const { toast } = useToast();
   const [activeRoomCode, setActiveRoomCode] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // Background interval timer to auto-delete rooms after 60 mins of inactivity or upon reaching limit
+  useEffect(() => {
+    const checkInterval = setInterval(() => {
+      // Calling getAllRooms() filters out both expired and inactive (60m) rooms on-the-fly and saves.
+      const activeRooms = getAllRooms();
+      
+      if (activeRoomCode) {
+        const uppercaseCode = activeRoomCode.toUpperCase();
+        if (!activeRooms[uppercaseCode]) {
+          toast('Room automatically closed due to 60 minutes of inactivity or expiration.', 'warning', 5000);
+          handleLeaveRoom();
+        }
+      }
+    }, 10000); // Check every 10 seconds
+
+    return () => clearInterval(checkInterval);
+  }, [activeRoomCode, toast]);
 
   // Parse URL search parameters on boot to see if direct link or QR scan was used
   useEffect(() => {
@@ -25,12 +45,14 @@ export default function App() {
       if (existing) {
         setActiveRoomCode(code);
         localStorage.setItem('68share_active_room_code', code);
+        toast(`Successfully joined Room ${code}!`, 'success');
       } else {
         // Clear URL if invalid room specified to avoid noise
         window.history.pushState({}, '', window.location.pathname);
+        toast(`Could not find Room "${code}". It may have expired or been deleted.`, 'error', 4000);
       }
     }
-  }, []);
+  }, [toast]);
 
   const handleOpenSetup = () => {
     setShowCreateModal(true);
@@ -40,6 +62,7 @@ export default function App() {
     setActiveRoomCode(room.code);
     localStorage.setItem('68share_active_room_code', room.code);
     setShowCreateModal(false);
+    toast(`Room "${room.code}" successfully created and secured!`, 'success');
 
     // Sync URL queries to include active code so direct reloads match instantly
     const newUrl = `${window.location.origin}${window.location.pathname}?room=${room.code}`;
@@ -62,6 +85,7 @@ export default function App() {
     if (formatted && handleCheckRoomExists(formatted)) {
       setActiveRoomCode(formatted);
       localStorage.setItem('68share_active_room_code', formatted);
+      toast(`Successfully joined Room ${formatted}!`, 'success');
       const newUrl = `${window.location.origin}${window.location.pathname}?room=${formatted}`;
       window.history.pushState({}, '', newUrl);
     }

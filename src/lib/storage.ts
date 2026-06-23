@@ -50,7 +50,7 @@ export function getAllRooms(): Record<string, Room> {
     if (!raw) return {};
     const parsed = JSON.parse(raw) as Record<string, Room>;
     
-    // Filter out expired rooms on-the-fly
+    // Filter out expired and inactive rooms on-the-fly
     const now = new Date().getTime();
     const active: Record<string, Room> = {};
     let altered = false;
@@ -58,7 +58,14 @@ export function getAllRooms(): Record<string, Room> {
     for (const code in parsed) {
       const room = parsed[code];
       const expiry = new Date(room.expiresAt).getTime();
-      if (now < expiry) {
+      
+      // Calculate inactivity: 60 minutes of inactivity
+      const lastActiveTime = room.lastActiveAt 
+        ? new Date(room.lastActiveAt).getTime() 
+        : (new Date(room.expiresAt).getTime() - getDurationMs(room.duration));
+      const isInactive = (now - lastActiveTime) > 60 * 60 * 1000;
+
+      if (now < expiry && !isInactive) {
         active[code] = room;
       } else {
         // Automatically delete associated larger keys if any
@@ -71,6 +78,10 @@ export function getAllRooms(): Record<string, Room> {
 
     if (altered) {
       localStorage.setItem(STORAGE_KEYS.ROOMS, JSON.stringify(active));
+      // Dispatch event to sync other tabs or hooks asynchronously
+      setTimeout(() => {
+        window.dispatchEvent(new Event('68share_rooms_changed'));
+      }, 0);
     }
 
     return active;
@@ -119,6 +130,7 @@ export function createRoom(name: string, duration: RoomDuration, password?: stri
       }
     ],
     usersOnline: 1, // Will fluctuate with multiple tabs open
+    lastActiveAt: now.toISOString(),
   };
 
   const activeRooms = getAllRooms();
@@ -131,6 +143,7 @@ export function createRoom(name: string, duration: RoomDuration, password?: stri
 // Update specific fields of a room
 export function updateRoom(room: Room): void {
   const activeRooms = getAllRooms();
+  room.lastActiveAt = new Date().toISOString();
   activeRooms[room.code] = room;
   saveRooms(activeRooms);
   

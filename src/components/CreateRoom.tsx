@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { X, Clock, Lock, KeyRound, ShieldAlert, ArrowRight, Clipboard, Check, QrCode, Sparkles } from 'lucide-react';
 import { RoomDuration, Room } from '../types';
 import { createRoom, getQrCodeUrl } from '../lib/storage';
+import { useToast } from './Toast';
 
 interface CreateRoomProps {
   onClose: () => void;
@@ -10,6 +11,7 @@ interface CreateRoomProps {
 }
 
 export function CreateRoom({ onClose, onRoomCreated }: CreateRoomProps) {
+  const { toast } = useToast();
   const [roomName, setRoomName] = useState('');
   const [duration, setDuration] = useState<RoomDuration>('1hr');
   const [usePassword, setUsePassword] = useState(false);
@@ -42,6 +44,7 @@ export function CreateRoom({ onClose, onRoomCreated }: CreateRoomProps) {
   const handleCopyLink = () => {
     navigator.clipboard.writeText(getShareUrl());
     setCopiedLink(true);
+    toast('Room invitation link copied to clipboard!', 'success');
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
@@ -49,6 +52,7 @@ export function CreateRoom({ onClose, onRoomCreated }: CreateRoomProps) {
     if (!createdRoom) return;
     navigator.clipboard.writeText(createdRoom.code);
     setCopiedCode(true);
+    toast(`Room code ${createdRoom.code} copied!`, 'success');
     setTimeout(() => setCopiedCode(false), 2000);
   };
 

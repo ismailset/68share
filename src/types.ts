@@ -26,4 +26,5 @@ export interface Room {
   files: SharedFile[];
   activity: ActivityItem[];
   usersOnline: number;
+  lastActiveAt?: string;
 }
