@@ -9,7 +9,7 @@ import { Footer } from './components/Footer';
 import { CreateRoom } from './components/CreateRoom';
 import { RoomDashboard } from './components/RoomDashboard';
 import { Room } from './types';
-import { getRoom, getAllRooms } from './lib/storage';
+import { dbGetRoom } from './lib/storage';
 import { useToast } from './components/Toast';
 
 export default function App() {
@@ -17,39 +17,38 @@ export default function App() {
   const [activeRoomCode, setActiveRoomCode] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  // Background interval timer to auto-delete rooms after 60 mins of inactivity or upon reaching limit
-  useEffect(() => {
-    const checkInterval = setInterval(() => {
-      // Calling getAllRooms() filters out both expired and inactive (60m) rooms on-the-fly and saves.
-      const activeRooms = getAllRooms();
-      
-      if (activeRoomCode) {
-        const uppercaseCode = activeRoomCode.toUpperCase();
-        if (!activeRooms[uppercaseCode]) {
-          toast('Room automatically closed due to 60 minutes of inactivity or expiration.', 'warning', 5000);
-          handleLeaveRoom();
-        }
-      }
-    }, 10000); // Check every 10 seconds
-
-    return () => clearInterval(checkInterval);
-  }, [activeRoomCode, toast]);
-
   // Parse URL search parameters on boot to see if direct link or QR scan was used
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
     if (roomParam) {
       const code = roomParam.trim().toUpperCase();
-      const existing = getRoom(code);
-      if (existing) {
-        setActiveRoomCode(code);
-        localStorage.setItem('68share_active_room_code', code);
-        toast(`Successfully joined Room ${code}!`, 'success');
-      } else {
-        // Clear URL if invalid room specified to avoid noise
+      
+      dbGetRoom(code).then((existing) => {
+        if (existing) {
+          setActiveRoomCode(code);
+          localStorage.setItem('68share_active_room_code', code);
+          toast(`Successfully connected to Room ${code}!`, 'success');
+        } else {
+          // Clear URL if invalid room specified to avoid noise
+          window.history.pushState({}, '', window.location.pathname);
+          toast(`Could not find Room "${code}". It may have expired or been deleted.`, 'error', 4000);
+        }
+      }).catch((err) => {
+        console.error("Error joining room on boot:", err);
         window.history.pushState({}, '', window.location.pathname);
-        toast(`Could not find Room "${code}". It may have expired or been deleted.`, 'error', 4000);
+      });
+    } else {
+      // Check if there is an active room in memory/storage
+      const stored = localStorage.getItem('68share_active_room_code');
+      if (stored) {
+        dbGetRoom(stored).then((existing) => {
+          if (existing) {
+            setActiveRoomCode(stored);
+          } else {
+            localStorage.removeItem('68share_active_room_code');
+          }
+        });
       }
     }
   }, [toast]);
@@ -76,13 +75,9 @@ export default function App() {
     window.history.pushState({}, '', window.location.pathname);
   };
 
-  const handleCheckRoomExists = (code: string): boolean => {
-    return !!getRoom(code);
-  };
-
   const handleJoin = (code: string) => {
     const formatted = code.trim().toUpperCase();
-    if (formatted && handleCheckRoomExists(formatted)) {
+    if (formatted) {
       setActiveRoomCode(formatted);
       localStorage.setItem('68share_active_room_code', formatted);
       toast(`Successfully joined Room ${formatted}!`, 'success');
@@ -113,7 +108,6 @@ export default function App() {
               <Hero 
                 onCreateRoom={handleOpenSetup} 
                 onJoinRoom={handleJoin}
-                onCheckRoomExists={handleCheckRoomExists}
               />
               <HowItWorks />
               <Features />

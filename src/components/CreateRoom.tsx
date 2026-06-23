@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { X, Clock, Lock, KeyRound, ShieldAlert, ArrowRight, Clipboard, Check, QrCode, Sparkles } from 'lucide-react';
 import { RoomDuration, Room } from '../types';
-import { createRoom, getQrCodeUrl } from '../lib/storage';
+import { dbCreateRoom, getQrCodeUrl } from '../lib/storage';
 import { useToast } from './Toast';
 
 interface CreateRoomProps {
@@ -20,6 +20,7 @@ export function CreateRoom({ onClose, onRoomCreated }: CreateRoomProps) {
   const [createdRoom, setCreatedRoom] = useState<Room | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const durationOptions: { value: RoomDuration; label: string; desc: string }[] = [
     { value: '10min', label: '10 Minutes', desc: 'Ideal for brief single-sent handoffs' },
@@ -28,12 +29,19 @@ export function CreateRoom({ onClose, onRoomCreated }: CreateRoomProps) {
     { value: '7days', label: '7 Days', desc: 'Perfect for prolonged ongoing syncs' },
   ];
 
-  const handleGenerate = (e: React.FormEvent) => {
+  const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalPassword = usePassword && password.trim() ? password.trim() : null;
-    const room = createRoom(roomName, duration, finalPassword);
-    setCreatedRoom(room);
-    setStage('success');
+    setIsGenerating(true);
+    try {
+      const room = await dbCreateRoom(roomName, duration, finalPassword);
+      setCreatedRoom(room);
+      setStage('success');
+    } catch (err) {
+      toast('Failed to generate sharing room. Try again.', 'error');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const getShareUrl = () => {
@@ -177,16 +185,18 @@ export function CreateRoom({ onClose, onRoomCreated }: CreateRoomProps) {
               <button
                 type="button"
                 onClick={onClose}
-                className="w-1/3 bg-white hover:bg-neutral-50 text-neutral-700 border border-black/5 rounded-xl py-3 font-sans font-semibold text-xs md:text-sm tracking-tight cursor-pointer"
+                disabled={isGenerating}
+                className="w-1/3 bg-white hover:bg-neutral-50 disabled:bg-neutral-100 disabled:text-neutral-400 text-neutral-700 border border-black/5 rounded-xl py-3 font-sans font-semibold text-xs md:text-sm tracking-tight cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="w-2/3 bg-[#2563EB] hover:bg-blue-700 text-white rounded-xl py-3 font-sans font-semibold text-xs md:text-sm flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-sm"
+                disabled={isGenerating}
+                className="w-2/3 bg-[#2563EB] hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl py-3 font-sans font-semibold text-xs md:text-sm flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-sm"
               >
-                Create Active Room
-                <ArrowRight className="w-4 h-4" />
+                {isGenerating ? 'Generating...' : 'Create Active Room'}
+                {!isGenerating && <ArrowRight className="w-4 h-4" />}
               </button>
             </div>
           </form>

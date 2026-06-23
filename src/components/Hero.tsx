@@ -5,17 +5,18 @@ import {
   ShieldCheck, FileText, Image as ImageIcon, Film, Archive, Download, 
   Plus, Check, Clipboard, AlertCircle, ChevronRight, Activity, CloudLightning
 } from 'lucide-react';
+import { dbGetRoom } from '../lib/storage';
 
 interface HeroProps {
   onCreateRoom: () => void;
   onJoinRoom: (code: string) => void;
-  onCheckRoomExists: (code: string) => boolean;
 }
 
-export function Hero({ onCreateRoom, onJoinRoom, onCheckRoomExists }: HeroProps) {
+export function Hero({ onCreateRoom, onJoinRoom }: HeroProps) {
   const [joinCode, setJoinCode] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [showInput, setShowInput] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
   
   // Simulated stats state for counters
   const [filesShared, setFilesShared] = useState(984020);
@@ -32,17 +33,28 @@ export function Hero({ onCreateRoom, onJoinRoom, onCheckRoomExists }: HeroProps)
     return () => clearInterval(interval);
   }, []);
 
-  const handleJoinSubmit = (e: React.FormEvent) => {
+  const handleJoinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const formattedCode = joinCode.trim().toUpperCase();
     if (formattedCode.length < 6) {
       setErrorMsg('Code must be exactly 6 characters');
       return;
     }
-    if (onCheckRoomExists(formattedCode)) {
-      onJoinRoom(formattedCode);
-    } else {
-      setErrorMsg(`Room "${formattedCode}" not found. Try creating a new one!`);
+    
+    setIsChecking(true);
+    setErrorMsg('');
+    try {
+      const existing = await dbGetRoom(formattedCode);
+      if (existing) {
+        onJoinRoom(formattedCode);
+      } else {
+        setErrorMsg(`Room "${formattedCode}" not found. It may have expired or does not exist!`);
+      }
+    } catch (err) {
+      setErrorMsg('Network error. Please try again.');
+      console.error(err);
+    } finally {
+      setIsChecking(false);
     }
   };
 
@@ -66,20 +78,7 @@ export function Hero({ onCreateRoom, onJoinRoom, onCheckRoomExists }: HeroProps)
             
             {/* Left Content Column */}
             <div className="lg:col-span-6 text-left max-w-2xl mx-auto lg:mx-0">
-              {/* Product Badge */}
-              <motion.div 
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-neutral-200 shadow-sm rounded-full text-[11px] font-medium text-neutral-800 mb-6"
-              >
-                <span className="flex h-2 w-2 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600"></span>
-                </span>
-                <span className="font-sans font-medium tracking-wide">68Share Premium v2.5 Active</span>
-              </motion.div>
-
+              
               {/* Headline */}
               <motion.h1 
                 initial={{ opacity: 0, y: 15 }}
@@ -142,12 +141,14 @@ export function Hero({ onCreateRoom, onJoinRoom, onCheckRoomExists }: HeroProps)
                       placeholder="Enter 6-char code"
                       className="pl-5 pr-1 py-2 font-mono font-bold text-neutral-900 placeholder:text-neutral-400 focus:outline-none w-full tracking-wider text-left uppercase text-sm"
                       autoFocus
+                      disabled={isChecking}
                     />
                     <button
                       type="submit"
-                      className="bg-[#0F172A] hover:bg-neutral-800 text-white font-sans font-semibold text-[13px] px-5 py-2.5 rounded-full whitespace-nowrap transition-colors cursor-pointer"
+                      disabled={isChecking}
+                      className="bg-[#0F172A] hover:bg-neutral-800 disabled:bg-neutral-400 text-white font-sans font-semibold text-[13px] px-5 py-2.5 rounded-full whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1"
                     >
-                      Join
+                      {isChecking ? 'Joining...' : 'Join'}
                     </button>
                   </motion.form>
                 )}
