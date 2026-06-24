@@ -3,11 +3,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   QrCode, Clipboard, Check, Users, Clock, UploadCloud, File, Download, 
   ShieldAlert, ArrowLeft, Lock, AlertTriangle, RefreshCw, FileText, Image as ImageIcon, Film, Archive,
-  Laptop, Smartphone, Tablet, Monitor
+  Laptop, Smartphone, Tablet, Monitor, Eye, X, Loader2
 } from 'lucide-react';
 import { Room, SharedFile, ActivityItem } from '../types';
 import { 
-  dbGetRoom, dbUpdateRoom, dbSubscribeRoom, dbUploadFileToRoom, dbTriggerDownload, 
+  dbGetRoom, dbUpdateRoom, dbSubscribeRoom, dbUploadFileToRoom, dbTriggerDownload, dbGetFileData,
   formatBytes, getQrCodeUrl, getDeviceName, dbJoinRoomPresence, dbLeaveRoomPresence
 } from '../lib/storage';
 import { hashPassword } from '../lib/crypto';
@@ -50,6 +50,111 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
   const lastKnownClipboardTextRef = useRef<string | undefined>(undefined);
   const hasInitializedTabRef = useRef(false);
   const sessionIdRef = useRef(crypto.randomUUID());
+
+  // File Preview capability state
+  const [previewFile, setPreviewFile] = useState<SharedFile | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewContent, setPreviewContent] = useState<string | null>(null);
+
+  const isPreviewable = (fileName: string) => {
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+    const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'];
+    const textExts = ['txt', 'md', 'json', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'csv', 'xml', 'ini', 'yaml', 'yml'];
+    return imageExts.includes(ext) || textExts.includes(ext);
+  };
+
+  const handlePreviewFile = async (file: SharedFile) => {
+    setPreviewFile(file);
+    setPreviewLoading(true);
+    setPreviewError(null);
+    setPreviewContent(null);
+
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      const isImg = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext);
+      
+      if (isImg) {
+        if (file.isStorage && file.dataUrl) {
+          setPreviewContent(file.dataUrl);
+        } else {
+          let base64Data: string | null = null;
+          if (file.dataUrl && file.dataUrl.startsWith('FIRESTORE_CHUNKED:')) {
+            const fileId = file.dataUrl.substring(18);
+            base64Data = await dbGetFileData(fileId, true, file.chunkCount);
+          } else if (file.dataUrl && file.dataUrl.startsWith('FIRESTORE:')) {
+            const fileId = file.dataUrl.substring(10);
+            base64Data = await dbGetFileData(fileId);
+          } else if (file.isChunked) {
+            base64Data = await dbGetFileData(file.id, true, file.chunkCount);
+          } else {
+            base64Data = await dbGetFileData(file.id);
+          }
+
+          if (base64Data) {
+            setPreviewContent(base64Data);
+          } else {
+            throw new Error("Unable to retrieve image content");
+          }
+        }
+      } else {
+        // Text file
+        let textContent = '';
+        if (file.isStorage && file.dataUrl) {
+          const res = await fetch(file.dataUrl);
+          if (!res.ok) {
+            throw new Error(`Failed to fetch text content: ${res.statusText}`);
+          }
+          textContent = await res.text();
+        } else {
+          let base64Data: string | null = null;
+          if (file.dataUrl && file.dataUrl.startsWith('FIRESTORE_CHUNKED:')) {
+            const fileId = file.dataUrl.substring(18);
+            base64Data = await dbGetFileData(fileId, true, file.chunkCount);
+          } else if (file.dataUrl && file.dataUrl.startsWith('FIRESTORE:')) {
+            const fileId = file.dataUrl.substring(10);
+            base64Data = await dbGetFileData(fileId);
+          } else if (file.isChunked) {
+            base64Data = await dbGetFileData(file.id, true, file.chunkCount);
+          } else {
+            base64Data = await dbGetFileData(file.id);
+          }
+
+          if (base64Data) {
+            if (base64Data.startsWith('data:')) {
+              const parts = base64Data.split(',');
+              if (parts.length >= 2) {
+                const isBase64 = parts[0].includes('base64');
+                if (isBase64) {
+                  const binaryString = atob(parts[1]);
+                  const len = binaryString.length;
+                  const bytes = new Uint8Array(len);
+                  for (let i = 0; i < len; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                  }
+                  textContent = new TextDecoder('utf-8').decode(bytes);
+                } else {
+                  textContent = decodeURIComponent(parts[1]);
+                }
+              } else {
+                textContent = base64Data;
+              }
+            } else {
+              textContent = base64Data;
+            }
+          } else {
+            throw new Error("Unable to retrieve text content");
+          }
+        }
+        setPreviewContent(textContent);
+      }
+    } catch (err: any) {
+      console.error('Preview error:', err);
+      setPreviewError(err?.message || 'Failed to assemble preview contents.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
 
   // Synchronize initial active tab with room focus
   useEffect(() => {
@@ -734,22 +839,40 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
                                 </span>
                               </div>
 
-                              <button 
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  toast(`Downloading "${file.name}"...`, 'success', 2000);
-                                  
-                                  // Update local stats for feedback trigger
-                                  const currentDownloads = Number(localStorage.getItem('68share_download_count') || '0') + 1;
-                                  localStorage.setItem('68share_download_count', String(currentDownloads));
+                              <div className="flex gap-2 items-center">
+                                {isPreviewable(file.name) && (
+                                  <button
+                                    id={`preview-btn-${file.id}`}
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      toast(`Assembling preview for "${file.name}"...`, 'success', 1500);
+                                      await handlePreviewFile(file);
+                                    }}
+                                    className="bg-neutral-100 hover:bg-neutral-200 text-neutral-700 w-8 h-8 rounded-xl flex items-center justify-center transition-all select-none shadow-3xs hover:scale-105 cursor-pointer border border-neutral-200/50"
+                                    title="Preview File"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+                                )}
 
-                                  await dbTriggerDownload(file, roomCode);
-                                }}
-                                className="bg-indigo-600 hover:bg-indigo-750 text-white w-8 h-8 rounded-xl flex items-center justify-center transition-all select-none shadow-xs hover:scale-105 cursor-pointer"
-                                title="Download File"
-                              >
-                                <Download className="w-4 h-4" />
-                              </button>
+                                <button 
+                                  id={`download-btn-${file.id}`}
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    toast(`Downloading "${file.name}"...`, 'success', 2000);
+                                    
+                                    // Update local stats for feedback trigger
+                                    const currentDownloads = Number(localStorage.getItem('68share_download_count') || '0') + 1;
+                                    localStorage.setItem('68share_download_count', String(currentDownloads));
+
+                                    await dbTriggerDownload(file, roomCode);
+                                  }}
+                                  className="bg-indigo-600 hover:bg-indigo-750 text-white w-8 h-8 rounded-xl flex items-center justify-center transition-all select-none shadow-xs hover:scale-105 cursor-pointer"
+                                  title="Download File"
+                                >
+                                  <Download className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
                           </motion.div>
                         );
@@ -934,6 +1057,119 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
         </div>
 
       </div>
+
+      {/* File Preview Modal */}
+      <AnimatePresence>
+        {previewFile && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 md:p-6"
+            onClick={() => setPreviewFile(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ type: "spring", duration: 0.4 }}
+              className="bg-white rounded-[28px] border border-neutral-200 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden text-left"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between p-5 border-b border-neutral-100 bg-neutral-50/50">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${getFileStyleAndIcon(previewFile.name).bg}`}>
+                    {getFileStyleAndIcon(previewFile.name).icon}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-sans font-bold text-neutral-800 truncate pr-2" title={previewFile.name}>
+                      {previewFile.name}
+                    </h3>
+                    <p className="text-[10px] font-sans font-semibold text-neutral-400 uppercase tracking-wider mt-0.5">
+                      {formatBytes(previewFile.size)} • Uploaded by {previewFile.uploader}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  id="close-preview-x"
+                  onClick={() => setPreviewFile(null)}
+                  className="w-8 h-8 rounded-full bg-white border border-neutral-200 flex items-center justify-center text-neutral-500 hover:text-neutral-800 hover:shadow-xs transition-all cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Content Area */}
+              <div className="flex-grow overflow-auto p-6 flex flex-col items-center justify-center min-h-[250px] bg-neutral-50/20">
+                {previewLoading && (
+                  <div className="flex flex-col items-center gap-3 text-neutral-500 py-12">
+                    <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+                    <span className="text-xs font-medium font-sans animate-pulse">Assembling secure preview payload...</span>
+                  </div>
+                )}
+
+                {previewError && (
+                  <div className="flex flex-col items-center gap-3 text-neutral-500 max-w-md text-center py-12">
+                    <AlertTriangle className="w-10 h-10 text-amber-500" />
+                    <p className="text-sm font-sans font-bold text-neutral-700">Preview Generation Error</p>
+                    <p className="text-xs font-sans text-neutral-500">{previewError}</p>
+                  </div>
+                )}
+
+                {!previewLoading && !previewError && previewContent && (
+                  <div className="w-full h-full flex items-center justify-center">
+                    {['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(previewFile.name.split('.').pop()?.toLowerCase() || '') ? (
+                      <img
+                        src={previewContent}
+                        alt={previewFile.name}
+                        className="max-h-[55vh] md:max-h-[62vh] object-contain rounded-xl border border-neutral-200/60 shadow-xs bg-white p-1.5 select-none"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-full max-h-[55vh] md:max-h-[62vh] bg-white rounded-xl border border-neutral-200/80 shadow-3xs overflow-auto">
+                        <pre className="font-mono text-[11px] leading-relaxed text-neutral-800 p-5 whitespace-pre-wrap select-text text-left">
+                          {previewContent}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 border-t border-neutral-100 bg-neutral-50/50 flex items-center justify-between">
+                <span className="text-[10px] font-sans text-neutral-400 font-medium">
+                  Verification Preview Mode • Files are encrypted in transit
+                </span>
+                
+                <div className="flex items-center gap-2.5">
+                  <button
+                    id="close-preview-btn"
+                    onClick={() => setPreviewFile(null)}
+                    className="px-4 py-2 bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-neutral-300 text-neutral-700 font-sans font-semibold text-xs rounded-xl transition-all cursor-pointer shadow-3xs active:scale-[0.99]"
+                  >
+                    Close View
+                  </button>
+                  <button
+                    id="download-preview-btn"
+                    onClick={async () => {
+                      toast(`Downloading "${previewFile.name}"...`, 'success', 2000);
+                      const currentDownloads = Number(localStorage.getItem('68share_download_count') || '0') + 1;
+                      localStorage.setItem('68share_download_count', String(currentDownloads));
+                      await dbTriggerDownload(previewFile, roomCode);
+                    }}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-750 text-white font-sans font-semibold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-[0.99] hover:scale-[1.01]"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download File</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </section>
   );
