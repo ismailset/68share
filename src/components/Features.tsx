@@ -37,7 +37,7 @@ export function Features() {
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
             whileHover={{ y: -6 }}
-            className="md:col-span-8 bg-white border border-neutral-200 rounded-[32px] p-8 flex flex-col justify-between shadow-md hover:shadow-xl hover:border-blue-400 transition-all duration-300 relative overflow-hidden group min-h-[300px]"
+            className="md:col-span-8 bg-white border border-neutral-200 rounded-[32px] p-8 flex flex-col justify-between shadow-md hover:shadow-xl hover:border-blue-400 transition-[border-color,box-shadow,transform] duration-300 relative overflow-hidden group min-h-[300px] motion-card-gpu"
           >
             {/* Corner glowing element */}
             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 blur-[30px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
@@ -64,7 +64,7 @@ export function Features() {
             viewport={{ once: true }}
             transition={{ duration: 0.6, delay: 0.1 }}
             whileHover={{ y: -6 }}
-            className="md:col-span-4 bg-white border border-neutral-200 rounded-[32px] p-8 flex flex-col justify-between shadow-md hover:shadow-xl hover:border-indigo-400 transition-all duration-300 h-full relative overflow-hidden group min-h-[300px]"
+            className="md:col-span-4 bg-white border border-neutral-200 rounded-[32px] p-8 flex flex-col justify-between shadow-md hover:shadow-xl hover:border-indigo-400 transition-[border-color,box-shadow,transform] duration-300 h-full relative overflow-hidden group min-h-[300px] motion-card-gpu"
           >
             <div className="absolute -bottom-8 -right-8 w-24 h-24 bg-indigo-500/5 blur-[25px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
             <div>
@@ -88,7 +88,7 @@ export function Features() {
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
             whileHover={{ y: -6 }}
-            className="md:col-span-4 bg-white border border-neutral-200 rounded-[32px] p-8 flex flex-col justify-between shadow-md hover:shadow-xl hover:border-emerald-400 transition-all duration-300 h-full relative overflow-hidden group min-h-[300px]"
+            className="md:col-span-4 bg-white border border-neutral-200 rounded-[32px] p-8 flex flex-col justify-between shadow-md hover:shadow-xl hover:border-emerald-400 transition-[border-color,box-shadow,transform] duration-300 h-full relative overflow-hidden group min-h-[300px] motion-card-gpu"
           >
             <div>
               <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600 mb-6 group-hover:scale-105 duration-300 transition-transform">
@@ -111,7 +111,7 @@ export function Features() {
             viewport={{ once: true }}
             transition={{ duration: 0.6, delay: 0.1 }}
             whileHover={{ y: -6 }}
-            className="md:col-span-8 bg-white border border-neutral-200 rounded-[32px] p-8 flex flex-col justify-between shadow-md hover:shadow-xl hover:border-red-400 transition-all duration-300 relative overflow-hidden group min-h-[300px]"
+            className="md:col-span-8 bg-white border border-neutral-200 rounded-[32px] p-8 flex flex-col justify-between shadow-md hover:shadow-xl hover:border-red-400 transition-[border-color,box-shadow,transform] duration-300 relative overflow-hidden group min-h-[300px] motion-card-gpu"
           >
             <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 blur-[30px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
             <div>
@@ -136,7 +136,7 @@ export function Features() {
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
             whileHover={{ y: -6 }}
-            className="md:col-span-8 bg-white border border-neutral-200 rounded-[32px] p-8 flex flex-col justify-between shadow-md hover:shadow-xl hover:border-amber-400 transition-all duration-300 relative overflow-hidden group min-h-[300px]"
+            className="md:col-span-8 bg-white border border-neutral-200 rounded-[32px] p-8 flex flex-col justify-between shadow-md hover:shadow-xl hover:border-amber-400 transition-[border-color,box-shadow,transform] duration-300 relative overflow-hidden group min-h-[300px] motion-card-gpu"
           >
             <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 blur-[30px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
             <div>
@@ -161,7 +161,7 @@ export function Features() {
             viewport={{ once: true }}
             transition={{ duration: 0.6, delay: 0.1 }}
             whileHover={{ y: -6 }}
-            className="md:col-span-4 bg-white border border-neutral-200 rounded-[32px] p-8 flex flex-col justify-between shadow-md hover:shadow-xl hover:border-rose-400 transition-all duration-300 h-full relative overflow-hidden group min-h-[300px]"
+            className="md:col-span-4 bg-white border border-neutral-200 rounded-[32px] p-8 flex flex-col justify-between shadow-md hover:shadow-xl hover:border-rose-400 transition-[border-color,box-shadow,transform] duration-300 h-full relative overflow-hidden group min-h-[300px] motion-card-gpu"
           >
             <div>
               <div className="w-12 h-12 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-500 mb-6 group-hover:scale-105 duration-300 transition-transform">

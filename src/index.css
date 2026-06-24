@@ -9,14 +9,50 @@
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     line-height: 1.5;
     color: #0f172a;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
   }
   
   h1, h2, h3, h4, h5, h6 {
     letter-spacing: -0.02em;
   }
+}
+
+/* Force hardware GPU acceleration for elements with heavy blurs */
+.blur-\[80px\],
+.blur-\[100px\],
+.blur-\[120px\],
+.blur-\[140px\] {
+  transform: translate3d(0, 0, 0);
+  will-change: transform, filter;
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+/* Optimize scroll performance for backdrop-blur layers */
+.backdrop-blur-md,
+.backdrop-blur-xl {
+  transform: translate3d(0, 0, 0);
+  will-change: transform, backdrop-filter;
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+/* Optimize Framer Motion animated cards for paint/reflow efficiency on hover */
+.motion-card-gpu {
+  transform: translate3d(0, 0, 0);
+  will-change: transform, border-color, box-shadow;
+  backface-visibility: hidden;
 }
 
 /* Custom scrollbars for clean dashboard viewports */
@@ -37,3 +73,4 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(115, 115, 115, 0.2);
 }
+

@@ -10,6 +10,62 @@ import {
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { hashPassword, generateSalt } from './crypto';
 
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+  }
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: null,
+      email: null
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === undefined) {
+    return null as any;
+  }
+  if (data === null) {
+    return null as any;
+  }
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeForFirestore(item)) as any;
+  }
+  if (typeof data === 'object') {
+    const cleaned: any = {};
+    for (const key of Object.keys(data)) {
+      const val = (data as any)[key];
+      if (val !== undefined) {
+        cleaned[key] = sanitizeForFirestore(val);
+      }
+    }
+    return cleaned;
+  }
+  return data;
+}
+
 const STORAGE_KEYS = {
   USER_DEVICE: '68share_user_device',
 };
@@ -194,7 +250,11 @@ export async function dbCreateRoom(
 
   // 2. Commit to Cloud Database
   const docRef = doc(db, 'rooms', code);
-  await setDoc(docRef, newRoom);
+  try {
+    await setDoc(docRef, sanitizeForFirestore(newRoom));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, `rooms/${code}`);
+  }
 
   return newRoom;
 }
@@ -215,7 +275,7 @@ export async function dbUpdateRoom(room: Room): Promise<void> {
   // 2. Push to Firestore
   try {
     const docRef = doc(db, 'rooms', upperCode);
-    await setDoc(docRef, room, { merge: true });
+    await setDoc(docRef, sanitizeForFirestore(room), { merge: true });
   } catch (e) {
     console.error('Firestore sync failed, local state active:', e);
   }
@@ -248,11 +308,11 @@ export async function dbJoinRoomPresence(roomCode: string, sessionId: string, de
         }
       ];
       
-      transaction.update(docRef, {
+      transaction.update(docRef, sanitizeForFirestore({
         activeUsers: updatedUsers,
         usersOnline: updatedUsers.length,
         lastActiveAt: nowStr
-      });
+      }));
     });
   } catch (err) {
     console.error('Failed to run atomic presence join transaction:', err);
@@ -271,11 +331,11 @@ export async function dbLeaveRoomPresence(roomCode: string, sessionId: string): 
       const existingUsers = roomData.activeUsers || [];
       const updatedUsers = existingUsers.filter(u => u.id !== sessionId);
       
-      transaction.update(docRef, {
+      transaction.update(docRef, sanitizeForFirestore({
         activeUsers: updatedUsers,
         usersOnline: Math.max(1, updatedUsers.length),
         lastActiveAt: new Date().toISOString()
-      });
+      }));
     });
   } catch (err) {
     console.error('Failed to run atomic presence leave transaction:', err);
@@ -406,6 +466,110 @@ export function dataURLtoBlob(dataUrl: string): Blob {
   }
 }
 
+function fileToDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadToFirestoreChunks(
+  file: File, 
+  fileId: string, 
+  onProgress?: (progress: number) => void,
+  cancelRef?: { cancel?: () => void }
+): Promise<{ isChunked: boolean; chunkCount?: number; dataUrl: string }> {
+  console.log(`[Upload Fallback] Starting Firestore upload for: ${file.name}`);
+  const dataUrl = await fileToDataURL(file);
+  const chunkSize = 600 * 1024; // 600KB chunks
+  
+  // Seed the memory cache immediately so that downloads in the current session are instantaneous
+  IN_MEMORY_FILE_CACHE.set(fileId, dataUrl);
+  
+  let wasCancelled = false;
+  if (cancelRef) {
+    cancelRef.cancel = () => {
+      wasCancelled = true;
+    };
+  }
+
+  if (dataUrl.length <= chunkSize) {
+    if (onProgress) onProgress(30);
+    if (wasCancelled) {
+      throw { code: 'storage/canceled', message: 'Upload cancelled by user.' };
+    }
+    const contentRef = doc(db, 'file_contents', fileId);
+    try {
+      await setDoc(contentRef, { dataUrl });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `file_contents/${fileId}`);
+    }
+    if (onProgress) onProgress(100);
+    return { isChunked: false, dataUrl: `FIRESTORE:${fileId}` };
+  } else {
+    const chunks: string[] = [];
+    for (let i = 0; i < dataUrl.length; i += chunkSize) {
+      chunks.push(dataUrl.substring(i, i + chunkSize));
+    }
+    
+    const total = chunks.length;
+    console.log(`[Upload Fallback] Splitting into ${total} chunks for Firestore storage.`);
+    for (let i = 0; i < total; i++) {
+      if (wasCancelled) {
+        throw { code: 'storage/canceled', message: 'Upload cancelled by user.' };
+      }
+      const chunkRef = doc(db, 'file_chunks', `${fileId}_chunk_${i}`);
+      try {
+        await setDoc(chunkRef, { text: chunks[i] });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, `file_chunks/${fileId}_chunk_${i}`);
+      }
+      if (onProgress) {
+        onProgress(Math.round(((i + 1) / total) * 100));
+      }
+    }
+    
+    return { 
+      isChunked: true, 
+      chunkCount: total, 
+      dataUrl: `FIRESTORE_CHUNKED:${fileId}` 
+    };
+  }
+}
+
+async function commitFileMetadata(roomCode: string, file: SharedFile, uploader: string): Promise<void> {
+  const roomRef = doc(db, 'rooms', roomCode);
+  const activityItem: ActivityItem = {
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+    type: 'upload',
+    details: `${uploader} uploaded "${file.name}" (${formatBytes(file.size)}).`,
+  };
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      const roomSnap = await transaction.get(roomRef);
+      if (!roomSnap.exists()) {
+        throw new Error("Room was closed or has expired.");
+      }
+      
+      const roomData = roomSnap.data() as Room;
+      const updatedFiles = [file, ...(roomData.files || [])];
+      const updatedActivity = [activityItem, ...(roomData.activity || [])];
+
+      transaction.update(roomRef, sanitizeForFirestore({
+        files: updatedFiles,
+        activity: updatedActivity,
+        lastActiveAt: new Date().toISOString()
+      }));
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `rooms/${roomCode}`);
+  }
+}
+
 // Upload file to secure production-ready Firebase Storage with upload progress and cancellation
 export async function dbUploadFileToRoom(
   roomCode: string, 
@@ -417,78 +581,107 @@ export async function dbUploadFileToRoom(
   const fileId = crypto.randomUUID();
   const uploader = getDeviceName();
 
-  // 1. Establish reference to Firebase Storage file space
-  const storageRef = ref(storage, `rooms/${upperCode}/${fileId}_${file.name}`);
-  const uploadTask = uploadBytesResumable(storageRef, file);
+  console.log(`[Upload] Uploading "${file.name}" (${file.size} bytes) via reliable Firestore Database chunked storage...`);
 
-  // Hook cancel method if requested
-  if (cancelRef) {
-    cancelRef.cancel = () => {
-      uploadTask.cancel();
+  try {
+    const result = await uploadToFirestoreChunks(file, fileId, onProgress, cancelRef);
+    const fallbackFile: SharedFile = {
+      id: fileId,
+      name: file.name,
+      size: file.size,
+      type: file.type || 'application/octet-stream',
+      uploadedAt: new Date().toISOString(),
+      uploader,
+      dataUrl: result.dataUrl,
+      isStorage: false,
+      isChunked: result.isChunked,
+      chunkCount: result.chunkCount
     };
+
+    await commitFileMetadata(upperCode, fallbackFile, uploader);
+    console.log(`[Upload] Firestore upload completed successfully for "${file.name}"`);
+    return fallbackFile;
+  } catch (firestoreError: any) {
+    if (firestoreError?.code === 'storage/canceled') {
+      console.log('[Upload] Upload was cancelled by user during Firestore upload.');
+      throw firestoreError;
+    }
+
+    console.warn(`[Upload] Firestore upload failed, attempting Firebase Storage fallback...`, firestoreError);
+
+    // Fall back to Firebase Storage
+    let wasManuallyCanceled = false;
+    try {
+      if (!storage) {
+        throw new Error("Firebase Storage reference is not available.");
+      }
+      const storageRef = ref(storage, `rooms/${upperCode}/${fileId}_${file.name}`);
+      const uploadTask = uploadBytesResumable(storageRef, file);
+
+      // Prevent unhandled promise rejection warnings from the upload task itself
+      uploadTask.catch((err) => {
+        console.log('[Upload] uploadTask promise caught (handled via observer):', err.message);
+      });
+
+      // Hook cancel method if requested
+      if (cancelRef) {
+        cancelRef.cancel = () => {
+          wasManuallyCanceled = true;
+          uploadTask.cancel();
+        };
+      }
+
+      const sharedFile = await new Promise<SharedFile | null>((resolve, reject) => {
+        uploadTask.on('state_changed', 
+          (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            if (onProgress) {
+              onProgress(progress);
+            }
+          }, 
+          (error) => {
+            reject(error);
+          }, 
+          async () => {
+            try {
+              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+              const newFile: SharedFile = {
+                id: fileId,
+                name: file.name,
+                size: file.size,
+                type: file.type || 'application/octet-stream',
+                uploadedAt: new Date().toISOString(),
+                uploader,
+                dataUrl: downloadURL,
+                isStorage: true
+              };
+              resolve(newFile);
+            } catch (urlErr) {
+              reject(urlErr);
+            }
+          }
+        );
+      });
+
+      if (sharedFile) {
+        await commitFileMetadata(upperCode, sharedFile, uploader);
+        return sharedFile;
+      }
+    } catch (storageError: any) {
+      if (storageError?.code === 'storage/canceled' && wasManuallyCanceled) {
+        console.log('[Upload] Upload was cancelled by user during Storage fallback.');
+        throw storageError;
+      }
+      console.error("[Upload] Both Firestore and Firebase Storage uploads failed!", storageError);
+      throw storageError;
+    }
+  } finally {
+    if (cancelRef) {
+      cancelRef.cancel = undefined;
+    }
   }
 
-  return new Promise((resolve, reject) => {
-    uploadTask.on('state_changed', 
-      (snapshot) => {
-        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        if (onProgress) {
-          onProgress(progress);
-        }
-      }, 
-      (error) => {
-        console.error('Firebase Storage upload failed:', error);
-        reject(error);
-      }, 
-      async () => {
-        try {
-          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-          
-          const newFile: SharedFile = {
-            id: fileId,
-            name: file.name,
-            size: file.size,
-            type: file.type || 'application/octet-stream',
-            uploadedAt: new Date().toISOString(),
-            uploader,
-            dataUrl: downloadURL,
-            isStorage: true
-          };
-
-          const activityItem: ActivityItem = {
-            id: crypto.randomUUID(),
-            timestamp: new Date().toISOString(),
-            type: 'upload',
-            details: `${uploader} uploaded "${file.name}" (${formatBytes(file.size)}).`,
-          };
-
-          // 2. Commit metadata safely to room document using atomic runTransaction
-          const roomRef = doc(db, 'rooms', upperCode);
-          await runTransaction(db, async (transaction) => {
-            const roomSnap = await transaction.get(roomRef);
-            if (!roomSnap.exists()) {
-              throw new Error("Room was closed or has expired.");
-            }
-            
-            const roomData = roomSnap.data() as Room;
-            const updatedFiles = [newFile, ...(roomData.files || [])];
-            const updatedActivity = [activityItem, ...(roomData.activity || [])];
-
-            transaction.update(roomRef, {
-              files: updatedFiles,
-              activity: updatedActivity,
-              lastActiveAt: new Date().toISOString()
-            });
-          });
-
-          resolve(newFile);
-        } catch (txError) {
-          console.error("Presence and files transaction error:", txError);
-          reject(txError);
-        }
-      }
-    );
-  });
+  return null;
 }
 
 // Fetch file payload with robust in-memory caching and backwards compatibility fallback for chunks
@@ -614,9 +807,9 @@ export async function dbTriggerDownload(file: SharedFile, roomCode: string): Pro
       };
       
       const updatedActivity = [activityItem, ...(roomData.activity || [])];
-      transaction.update(roomRef, {
+      transaction.update(roomRef, sanitizeForFirestore({
         activity: updatedActivity
-      });
+      }));
     });
   } catch (e) {
     console.error('Activity logger error:', e);

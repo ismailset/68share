@@ -61,7 +61,7 @@ export function HowItWorks() {
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: idx * 0.15 }}
               whileHover={{ y: -8 }}
-              className="bg-white border border-neutral-200 hover:border-blue-400 p-8 rounded-[32px] text-left relative transition-all duration-300 shadow-md hover:shadow-xl hover:shadow-blue-500/5 group"
+              className="bg-white border border-neutral-200 hover:border-blue-400 p-8 rounded-[32px] text-left relative transition-[border-color,box-shadow,transform] duration-300 shadow-md hover:shadow-xl hover:shadow-blue-500/5 group motion-card-gpu"
             >
               {/* Card glowing decorator */}
               <div className="absolute inset-0 bg-gradient-to-br from-blue-50/10 to-indigo-50/10 rounded-[32px] opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10" />

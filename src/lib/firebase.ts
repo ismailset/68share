@@ -1,23 +1,13 @@
 import { initializeApp } from 'firebase/app';
-import { initializeFirestore } from 'firebase/firestore';
+import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
-
-const firebaseConfig = {
-  apiKey: "AIzaSyBBCaFO7ROBt5RPOIDTwXx3mHBWZg1POHA",
-  authDomain: "gen-lang-client-0211367334.firebaseapp.com",
-  projectId: "gen-lang-client-0211367334",
-  storageBucket: "gen-lang-client-0211367334.firebasestorage.app",
-  messagingSenderId: "429661434880",
-  appId: "1:429661434880:web:fc92caa4877a71821fd4e5"
-};
+import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore with specific custom database ID and robust long polling forced connection
-export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
-}, "ai-studio-8d94d414-404c-4149-9e38-6a6165d13f8b");
+// Initialize Firestore with specific custom database ID
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 // Export Storage
 export const storage = getStorage(app);

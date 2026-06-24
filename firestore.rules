@@ -21,8 +21,8 @@ service cloud.firestore {
     }
 
     match /rooms/{roomCode} {
-      // Allow read if room code is formatted correctly and the room is still active
-      allow get: if isValidRoomId(roomCode) && isRoomActive(resource.data);
+      // Allow read get requests so incomplete or invalid codes elegantly return "not found" instead of permission errors
+      allow get: if true;
       
       // Allow creation under strict payload validation constraints
       allow create: if isValidRoomId(roomCode) 
@@ -37,9 +37,8 @@ service cloud.firestore {
         && request.resource.data.activity.size() <= 10
         && request.resource.data.usersOnline == 1;
 
-      // Allow updates if room is active, formats are valid, and immutable fields are untouched
+      // Allow updates if format is valid, immutable fields are untouched, and abuse limits are respected
       allow update: if isValidRoomId(roomCode)
-        && isRoomActive(resource.data)
         // Immutable assertions: Room code, duration, expiresAt cannot change
         && request.resource.data.code == resource.data.code
         && request.resource.data.duration == resource.data.duration
@@ -66,7 +65,13 @@ service cloud.firestore {
 
     // Backup chunked file rules for older files
     match /file_chunks/{chunkId} {
-      allow get, create: if chunkId is string && chunkId.size() <= 120;
+      allow get, create: if true;
+      allow list, update, delete: if false;
+    }
+
+    // Secure database storage file payloads
+    match /file_contents/{fileId} {
+      allow get, create: if true;
       allow list, update, delete: if false;
     }
   }

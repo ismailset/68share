@@ -117,7 +117,7 @@ export function Security() {
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true }}
                   transition={{ duration: 0.5, delay: idx * 0.1 }}
-                  className="bg-white/[0.03] border border-white/5 rounded-2xl p-5 sm:p-6 flex gap-4 items-start hover:border-white/10 hover:bg-white/[0.04] transition-all duration-300"
+                  className="bg-white/[0.03] border border-white/5 rounded-2xl p-5 sm:p-6 flex gap-4 items-start hover:border-white/10 hover:bg-white/[0.04] transition-[border-color,background-color,transform] duration-300 motion-card-gpu"
                 >
                   <div className="w-11 h-11 rounded-xl bg-white/[0.04] flex items-center justify-center shrink-0 border border-white/5 text-blue-400">
                     {pt.icon}
