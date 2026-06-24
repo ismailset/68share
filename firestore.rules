@@ -1,8 +1,73 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Default deny catch-all
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
+    }
+    
+    // Validate room code format (must be 6-character string starting with 68 followed by 4 capital alphanumeric characters)
+    function isValidRoomId(roomCode) {
+      return roomCode is string 
+        && roomCode.size() == 6 
+        && roomCode.matches('^68[A-Z2-9]{4}$');
+    }
+    
+    // Verify room has not expired
+    function isRoomActive(roomData) {
+      return roomData.expiresAt is string 
+        && request.time < timestamp(roomData.expiresAt);
+    }
+
+    match /rooms/{roomCode} {
+      // Allow read if room code is formatted correctly and the room is still active
+      allow get: if isValidRoomId(roomCode) && isRoomActive(resource.data);
+      
+      // Allow creation under strict payload validation constraints
+      allow create: if isValidRoomId(roomCode) 
+        && request.resource.data.code == roomCode
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.duration in ['10min', '1hr', '24hr', '7days']
+        && request.resource.data.expiresAt is string
+        && request.resource.data.files is list
+        && request.resource.data.files.size() == 0
+        && request.resource.data.activity is list
+        && request.resource.data.activity.size() <= 10
+        && request.resource.data.usersOnline == 1;
+
+      // Allow updates if room is active, formats are valid, and immutable fields are untouched
+      allow update: if isValidRoomId(roomCode)
+        && isRoomActive(resource.data)
+        // Immutable assertions: Room code, duration, expiresAt cannot change
+        && request.resource.data.code == resource.data.code
+        && request.resource.data.duration == resource.data.duration
+        && request.resource.data.expiresAt == resource.data.expiresAt
+        // Protect secret credentials
+        && (!('passwordHash' in resource.data) || request.resource.data.passwordHash == resource.data.passwordHash)
+        && (!('passwordSalt' in resource.data) || request.resource.data.passwordSalt == resource.data.passwordSalt)
+        // Limit abuse limits
+        && request.resource.data.files.size() <= 50
+        && request.resource.data.activity.size() <= 150;
+
+      // Restrict deletes to defend against mass-deletion attacks
+      allow delete: if false;
+    }
+
+    // Secure feedback submissions collection
+    match /feedback/{feedbackId} {
+      allow create: if request.resource.data.rating is number
+        && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+        && request.resource.data.email is string
+        && request.resource.data.timestamp is string;
+      allow read, update, delete: if false;
+    }
+
+    // Backup chunked file rules for older files
+    match /file_chunks/{chunkId} {
+      allow get, create: if chunkId is string && chunkId.size() <= 120;
+      allow list, update, delete: if false;
     }
   }
 }

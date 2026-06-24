@@ -69,6 +69,11 @@ export function ClipboardSync({ room, onUpdateRoom }: ClipboardSyncProps) {
       };
 
       await onUpdateRoom(updatedRoom);
+      
+      // Update local statistics for feedback trigger
+      const currentClips = Number(localStorage.getItem('68share_clipboard_count') || '0') + 1;
+      localStorage.setItem('68share_clipboard_count', String(currentClips));
+
       toast('Clipboard content synced across all devices!', 'success');
       setInputText('');
     } catch (err: any) {

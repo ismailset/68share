@@ -8,8 +8,10 @@ import {
 import { Room, SharedFile, ActivityItem } from '../types';
 import { 
   dbGetRoom, dbUpdateRoom, dbSubscribeRoom, dbUploadFileToRoom, dbTriggerDownload, 
-  formatBytes, getQrCodeUrl, getDeviceName 
+  formatBytes, getQrCodeUrl, getDeviceName, dbJoinRoomPresence, dbLeaveRoomPresence
 } from '../lib/storage';
+import { hashPassword } from '../lib/crypto';
+import { AbuseProtection } from '../lib/errorMonitor';
 import { useToast } from './Toast';
 import { ClipboardSync } from './ClipboardSync';
 
@@ -36,6 +38,13 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(true);
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  
+  // Real-time Upload Progress, cancellation and retry states
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadingFileName, setUploadingFileName] = useState<string | null>(null);
+  const [failedFile, setFailedFile] = useState<File | null>(null);
+  const cancelUploadRef = useRef<{ cancel?: () => void }>({});
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const lastKnownClipboardTextRef = useRef<string | undefined>(undefined);
@@ -82,34 +91,14 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
     });
 
     // Handle initial join increments & password shield checks
-    dbGetRoom(uppercaseCode).then((active) => {
+    dbGetRoom(uppercaseCode).then(async (active) => {
       if (active) {
-        if (active.password) {
+        if (active.passwordHash || active.password) {
           setIsAuthenticated(false);
+        } else {
+          // No password, join room presence atomically
+          await dbJoinRoomPresence(uppercaseCode, sessionIdRef.current, getDeviceName());
         }
-        
-        const updated = { ...active };
-        const mySessionId = sessionIdRef.current;
-        const myDeviceName = getDeviceName();
-        
-        // Ensure activeUsers list exists, prune dead entries (>24hr old), and add current session
-        const existingUsers = updated.activeUsers || [];
-        const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-        const filteredUsers = existingUsers.filter(u => {
-          const joinedTime = new Date(u.joinedAt).getTime();
-          return u.id !== mySessionId && joinedTime > oneDayAgo;
-        });
-        
-        updated.activeUsers = [
-          ...filteredUsers,
-          {
-            id: mySessionId,
-            deviceName: myDeviceName,
-            joinedAt: new Date().toISOString()
-          }
-        ];
-        updated.usersOnline = updated.activeUsers.length;
-        dbUpdateRoom(updated);
       }
     }).catch(err => {
       console.error("Error fetching room on mount:", err);
@@ -117,20 +106,8 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
 
     return () => {
       unsubscribe();
-      // Remove current session upon exiting
-      dbGetRoom(uppercaseCode).then((active) => {
-        if (active) {
-          const updated = { ...active };
-          const mySessionId = sessionIdRef.current;
-          
-          const existingUsers = updated.activeUsers || [];
-          updated.activeUsers = existingUsers.filter(u => u.id !== mySessionId);
-          updated.usersOnline = Math.max(1, updated.activeUsers.length);
-          dbUpdateRoom(updated).catch(e => console.error(e));
-        }
-      }).catch(err => {
-        console.error("Error removing session from active users:", err);
-      });
+      // Remove current session atomically upon exiting
+      dbLeaveRoomPresence(uppercaseCode, sessionIdRef.current).catch(e => console.error(e));
     };
   }, [roomCode]);
 
@@ -166,26 +143,44 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
     return () => clearInterval(interval);
   }, [room?.expiresAt]);
 
-  // Handler for password lock
-  const handleAuthSubmit = (e: React.FormEvent) => {
+  // Handler for password lock with secure hashing and brute force protection
+  const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!room) return;
-    if (passwordInput === room.password) {
+    const uppercaseCode = roomCode.trim().toUpperCase();
+
+    if (AbuseProtection.isPasswordLocked(uppercaseCode)) {
+      const remaining = AbuseProtection.getPasswordLockRemaining(uppercaseCode);
+      setPasswordError(`Too many failed attempts. Locked. Please try again in ${remaining}s.`);
+      toast(`Verification is locked for ${remaining}s.`, 'error');
+      return;
+    }
+
+    let isValid = false;
+    if (room.passwordHash && room.passwordSalt) {
+      const hashed = await hashPassword(passwordInput, room.passwordSalt);
+      isValid = hashed === room.passwordHash;
+    } else if (room.password) {
+      isValid = passwordInput === room.password;
+    }
+
+    if (isValid) {
+      AbuseProtection.resetPasswordAttempts(uppercaseCode);
       setIsAuthenticated(true);
       toast('Shield room unlocked successfully!', 'success');
       
-      // Log successful unlock activity
-      const updated = { ...room };
-      updated.activity.unshift({
-        id: crypto.randomUUID(),
-        timestamp: new Date().toISOString(),
-        type: 'join',
-        details: `${getDeviceName()} entered correct room password keycode.`,
-      });
-      dbUpdateRoom(updated);
+      // Update room presence atomically
+      await dbJoinRoomPresence(uppercaseCode, sessionIdRef.current, getDeviceName());
     } else {
-      setPasswordError('Invalid passphrase passcode. Try again!');
-      toast('Invalid passphrase passcode!', 'error');
+      const result = AbuseProtection.recordFailedPasswordAttempt(uppercaseCode);
+      if (result.isLocked) {
+        setPasswordError('Too many failed attempts. Access locked for 30 seconds.');
+        toast('Access locked due to too many failed attempts.', 'error');
+      } else {
+        const attemptsLeft = 5 - result.attempts;
+        setPasswordError(`Invalid password. ${attemptsLeft} attempts remaining.`);
+        toast(`Invalid password! ${attemptsLeft} attempts remaining.`, 'error');
+      }
     }
   };
 
@@ -225,42 +220,75 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
 
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
-      await processFileUpload(files[0]);
+      await processFileUpload(files);
     }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      await processFileUpload(files[0]);
+      await processFileUpload(files);
     }
   };
 
-  const processFileUpload = async (file: File) => {
+  const processFileUpload = async (fileList: FileList | File[]) => {
     if (!room) return;
-    setIsUploading(true);
-    setUploadError(null);
 
-    const maxCapacity = 25 * 1024 * 1024; // 25MB limit for chunked uploader
-    if (file.size > maxCapacity) {
-      setUploadError(`File is too large (${formatBytes(file.size)}). Max limit is 25MB.`);
-      toast(`File is too large. Max limit is 25MB.`, 'error');
-      setIsUploading(false);
+    // Rate Limiting Check
+    if (!AbuseProtection.checkUploadRateLimit()) {
+      setUploadError('Upload frequency too high. Please wait a few seconds before trying again.');
+      toast('Upload frequency limit exceeded.', 'error');
       return;
     }
 
-    try {
-      const parsed = await dbUploadFileToRoom(room.code, file);
-      if (parsed) {
-        toast(`Successfully uploaded & shared "${file.name}"!`, 'success');
+    setIsUploading(true);
+    setUploadError(null);
+    setFailedFile(null);
+    
+    const filesArray = Array.from(fileList);
+    const maxCapacity = 25 * 1024 * 1024; // 25MB
+
+    // Increment upload stats for feedback trigger
+    const currentUploads = Number(localStorage.getItem('68share_upload_count') || '0') + filesArray.length;
+    localStorage.setItem('68share_upload_count', String(currentUploads));
+
+    for (const file of filesArray) {
+      if (file.size > maxCapacity) {
+        setUploadError(`File "${file.name}" is too large (${formatBytes(file.size)}). Max limit is 25MB.`);
+        toast(`"${file.name}" exceeds 25MB limit.`, 'error');
+        continue;
       }
-    } catch (err: any) {
-      console.error(err);
-      setUploadError(err?.message || 'Failed to complete cloud transfer.');
-      toast('Failed to upload file.', 'error');
-    } finally {
-      setIsUploading(false);
+
+      setUploadingFileName(file.name);
+      setUploadProgress(0);
+
+      try {
+        const parsed = await dbUploadFileToRoom(
+          room.code, 
+          file, 
+          (progress) => {
+            setUploadProgress(Math.round(progress));
+          },
+          cancelUploadRef.current
+        );
+        if (parsed) {
+          toast(`Successfully uploaded & shared "${file.name}"!`, 'success');
+        }
+      } catch (err: any) {
+        console.error(err);
+        if (err?.code === 'storage/canceled') {
+          toast(`Upload of "${file.name}" was cancelled.`, 'warning');
+        } else {
+          setFailedFile(file);
+          setUploadError(`Failed to upload "${file.name}": ${err?.message || 'Transfer error'}`);
+          toast(`Failed to upload "${file.name}".`, 'error');
+        }
+      }
     }
+
+    setIsUploading(false);
+    setUploadProgress(null);
+    setUploadingFileName(null);
   };
 
   const triggerSelectFile = () => {
@@ -602,11 +630,55 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
                     : 'or click to browse local files. Supports images, archives, datasets, videos and documents up to 25MB.'}
                 </p>
 
+                {uploadProgress !== null && isUploading && (
+                  <div className="w-full max-w-sm bg-indigo-50 border border-indigo-100/60 rounded-2xl p-3.5 mt-4 text-left shadow-xs">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[11px] font-sans font-bold text-indigo-950 truncate max-w-[200px]" title={uploadingFileName || ''}>
+                        Uploading: {uploadingFileName}
+                      </span>
+                      <span className="text-[11px] font-mono font-bold text-indigo-700">{uploadProgress}%</span>
+                    </div>
+                    <div className="w-full bg-neutral-200/80 rounded-full h-1.5 overflow-hidden animate-pulse">
+                      <div 
+                        className="bg-indigo-600 h-1.5 rounded-full transition-all duration-150" 
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (cancelUploadRef.current?.cancel) {
+                          cancelUploadRef.current.cancel();
+                        }
+                      }}
+                      className="text-[10px] text-red-600 hover:text-red-700 font-sans font-extrabold uppercase mt-2.5 inline-block cursor-pointer hover:underline"
+                    >
+                      Cancel Upload
+                    </button>
+                  </div>
+                )}
+
                 {uploadError && (
-                  <p className="text-red-600 text-xs mt-3 font-sans font-semibold flex items-center gap-1 bg-red-50 px-3 py-1.5 rounded-lg border border-red-100 animate-bounce">
-                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                    {uploadError}
-                  </p>
+                  <div className="flex flex-col items-center gap-2 mt-3">
+                    <p className="text-red-600 text-xs font-sans font-semibold flex items-center gap-1 bg-red-50 px-3 py-1.5 rounded-lg border border-red-100 animate-bounce">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      {uploadError}
+                    </p>
+                    {failedFile && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          processFileUpload([failedFile]);
+                        }}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 font-sans font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <RefreshCw className="w-3 h-3.5 animate-spin" />
+                        <span>Retry Uploading "{failedFile.name}"</span>
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -666,6 +738,11 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
                                 onClick={async (e) => {
                                   e.stopPropagation();
                                   toast(`Downloading "${file.name}"...`, 'success', 2000);
+                                  
+                                  // Update local stats for feedback trigger
+                                  const currentDownloads = Number(localStorage.getItem('68share_download_count') || '0') + 1;
+                                  localStorage.setItem('68share_download_count', String(currentDownloads));
+
                                   await dbTriggerDownload(file, roomCode);
                                 }}
                                 className="bg-indigo-600 hover:bg-indigo-750 text-white w-8 h-8 rounded-xl flex items-center justify-center transition-all select-none shadow-xs hover:scale-105 cursor-pointer"

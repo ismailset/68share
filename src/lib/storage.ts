@@ -1,20 +1,65 @@
 import { Room, SharedFile, ActivityItem, RoomDuration } from '../types';
-import { db } from './firebase';
+import { db, storage } from './firebase';
 import { 
   doc, 
   getDoc, 
   setDoc, 
-  updateDoc, 
-  onSnapshot 
+  onSnapshot,
+  runTransaction
 } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { hashPassword, generateSalt } from './crypto';
 
 const STORAGE_KEYS = {
   USER_DEVICE: '68share_user_device',
 };
 
+// Memory cache for downloaded files instead of crashing localStorage!
+const IN_MEMORY_FILE_CACHE = new Map<string, string>();
+
+const safeLocalStorage = {
+  getItem(key: string): string | null {
+    try {
+      return localStorage.getItem(key);
+    } catch (e) {
+      return null;
+    }
+  },
+  setItem(key: string, value: string): boolean {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (e) {
+      if (e instanceof Error && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+        try {
+          // Prune older room cache to clear space
+          const keysToRemove: string[] = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith('68share_local_room_')) {
+              keysToRemove.push(k);
+            }
+          }
+          keysToRemove.forEach(k => localStorage.removeItem(k));
+          localStorage.setItem(key, value);
+          return true;
+        } catch (retryErr) {
+          console.warn('Failed to write to localStorage after pruning:', retryErr);
+        }
+      }
+      return false;
+    }
+  },
+  removeItem(key: string): void {
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {}
+  }
+};
+
 // Get or create unique uploader/device name
 export function getDeviceName(): string {
-  let device = localStorage.getItem(STORAGE_KEYS.USER_DEVICE);
+  let device = safeLocalStorage.getItem(STORAGE_KEYS.USER_DEVICE);
   if (!device) {
     const brands = [
       'MacBook Air', 'MacBook Pro', 'iPhone 15 Pro', 'Galaxy S24 Ultra', 
@@ -23,7 +68,7 @@ export function getDeviceName(): string {
     const randomBrand = brands[Math.floor(Math.random() * brands.length)];
     const id = Math.floor(1000 + Math.random() * 9000);
     device = `${randomBrand} #${id}`;
-    localStorage.setItem(STORAGE_KEYS.USER_DEVICE, device);
+    safeLocalStorage.setItem(STORAGE_KEYS.USER_DEVICE, device);
   }
   return device;
 }
@@ -65,12 +110,8 @@ export async function dbGetRoom(code: string): Promise<Room | null> {
     if (docSnap.exists()) {
       const room = docSnap.data() as Room;
       
-      // Update local storage copy
-      try {
-        localStorage.setItem(`68share_local_room_${uppercaseCode}`, JSON.stringify(room));
-      } catch (err) {
-        console.warn('Failed to cache room locally', err);
-      }
+      // Update local storage copy safely
+      safeLocalStorage.setItem(`68share_local_room_${uppercaseCode}`, JSON.stringify(room));
       
       return room;
     }
@@ -80,7 +121,7 @@ export async function dbGetRoom(code: string): Promise<Room | null> {
 
   // 2. Local Fallback Cache (Ideal for local testing or connection drops)
   try {
-    const localStr = localStorage.getItem(`68share_local_room_${uppercaseCode}`);
+    const localStr = safeLocalStorage.getItem(`68share_local_room_${uppercaseCode}`);
     if (localStr) {
       const room = JSON.parse(localStr) as Room;
       const now = new Date().getTime();
@@ -89,7 +130,7 @@ export async function dbGetRoom(code: string): Promise<Room | null> {
       if (now < expiry) {
         return room;
       } else {
-        localStorage.removeItem(`68share_local_room_${uppercaseCode}`);
+        safeLocalStorage.removeItem(`68share_local_room_${uppercaseCode}`);
       }
     }
   } catch (err) {
@@ -99,7 +140,7 @@ export async function dbGetRoom(code: string): Promise<Room | null> {
   return null;
 }
 
-// Create room in Firestore with instant local mirror
+// Create room in Firestore with instant local mirror & hashed passwords
 export async function dbCreateRoom(
   name: string, 
   duration: RoomDuration, 
@@ -110,12 +151,21 @@ export async function dbCreateRoom(
   const now = new Date();
   const expiresAt = new Date(now.getTime() + getDurationMs(duration)).toISOString();
   
+  let passwordHash: string | null = null;
+  let passwordSalt: string | null = null;
+
+  if (password) {
+    passwordSalt = generateSalt();
+    passwordHash = await hashPassword(password, passwordSalt);
+  }
+
   const newRoom: Room = {
     code,
     name: name.trim() || `Room ${code}`,
     duration,
     expiresAt,
-    password: password ? password : null,
+    passwordHash,
+    passwordSalt,
     files: [],
     activity: [
       {
@@ -140,11 +190,7 @@ export async function dbCreateRoom(
   };
 
   // 1. Store locally immediately
-  try {
-    localStorage.setItem(`68share_local_room_${code}`, JSON.stringify(newRoom));
-  } catch (eh) {
-    console.warn('Failed to write local database storage', eh);
-  }
+  safeLocalStorage.setItem(`68share_local_room_${code}`, JSON.stringify(newRoom));
 
   // 2. Commit to Cloud Database
   const docRef = doc(db, 'rooms', code);
@@ -160,7 +206,7 @@ export async function dbUpdateRoom(room: Room): Promise<void> {
 
   // 1. Sync local cache & dispatch tab sync events
   try {
-    localStorage.setItem(`68share_local_room_${upperCode}`, JSON.stringify(room));
+    safeLocalStorage.setItem(`68share_local_room_${upperCode}`, JSON.stringify(room));
     window.dispatchEvent(new CustomEvent(`68share_local_update_${upperCode}`, { detail: room }));
   } catch (eh) {
     console.warn('Failed to update local cache', eh);
@@ -172,6 +218,67 @@ export async function dbUpdateRoom(room: Room): Promise<void> {
     await setDoc(docRef, room, { merge: true });
   } catch (e) {
     console.error('Firestore sync failed, local state active:', e);
+  }
+}
+
+// Atomic concurrent-safe presence tracker for room joins
+export async function dbJoinRoomPresence(roomCode: string, sessionId: string, deviceName: string): Promise<void> {
+  const docRef = doc(db, 'rooms', roomCode.toUpperCase());
+  try {
+    await runTransaction(db, async (transaction) => {
+      const docSnap = await transaction.get(docRef);
+      if (!docSnap.exists()) return;
+      
+      const roomData = docSnap.data() as Room;
+      const nowStr = new Date().toISOString();
+      const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+      
+      const existingUsers = roomData.activeUsers || [];
+      const filteredUsers = existingUsers.filter(u => {
+        const joinedTime = new Date(u.joinedAt).getTime();
+        return u.id !== sessionId && joinedTime > oneDayAgo;
+      });
+      
+      const updatedUsers = [
+        ...filteredUsers,
+        {
+          id: sessionId,
+          deviceName,
+          joinedAt: nowStr
+        }
+      ];
+      
+      transaction.update(docRef, {
+        activeUsers: updatedUsers,
+        usersOnline: updatedUsers.length,
+        lastActiveAt: nowStr
+      });
+    });
+  } catch (err) {
+    console.error('Failed to run atomic presence join transaction:', err);
+  }
+}
+
+// Atomic concurrent-safe presence tracker for room leaves
+export async function dbLeaveRoomPresence(roomCode: string, sessionId: string): Promise<void> {
+  const docRef = doc(db, 'rooms', roomCode.toUpperCase());
+  try {
+    await runTransaction(db, async (transaction) => {
+      const docSnap = await transaction.get(docRef);
+      if (!docSnap.exists()) return;
+      
+      const roomData = docSnap.data() as Room;
+      const existingUsers = roomData.activeUsers || [];
+      const updatedUsers = existingUsers.filter(u => u.id !== sessionId);
+      
+      transaction.update(docRef, {
+        activeUsers: updatedUsers,
+        usersOnline: Math.max(1, updatedUsers.length),
+        lastActiveAt: new Date().toISOString()
+      });
+    });
+  } catch (err) {
+    console.error('Failed to run atomic presence leave transaction:', err);
   }
 }
 
@@ -211,7 +318,7 @@ export function dbSubscribeRoom(code: string, callback: (room: Room | null) => v
   // Local Poller sync backup
   const fallbackInterval = setInterval(() => {
     if (!isFirestoreWorking) {
-      const localStr = localStorage.getItem(`68share_local_room_${uppercaseCode}`);
+      const localStr = safeLocalStorage.getItem(`68share_local_room_${uppercaseCode}`);
       if (localStr) {
         try {
           const room = JSON.parse(localStr) as Room;
@@ -248,10 +355,8 @@ export function dbSubscribeRoom(code: string, callback: (room: Room | null) => v
         return;
       }
 
-      // Keep cache current
-      try {
-        localStorage.setItem(`68share_local_room_${uppercaseCode}`, JSON.stringify(room));
-      } catch (le) {}
+      // Keep cache current safely
+      safeLocalStorage.setItem(`68share_local_room_${uppercaseCode}`, JSON.stringify(room));
 
       callback(room);
     }, (error) => {
@@ -259,7 +364,7 @@ export function dbSubscribeRoom(code: string, callback: (room: Room | null) => v
       isFirestoreWorking = false;
       
       // Load current local cache immediately to secure view
-      const localStr = localStorage.getItem(`68share_local_room_${uppercaseCode}`);
+      const localStr = safeLocalStorage.getItem(`68share_local_room_${uppercaseCode}`);
       if (localStr) {
         try {
           callback(JSON.parse(localStr));
@@ -276,16 +381,6 @@ export function dbSubscribeRoom(code: string, callback: (room: Room | null) => v
   return () => {
     unsubscribes.forEach(unsub => unsub());
   };
-}
-
-// Convert File helper
-function readAsDataUrl(f: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(f);
-  });
 }
 
 // Convert arbitrary Data URL to a native Browser Blob (bypass download limits)
@@ -311,96 +406,102 @@ export function dataURLtoBlob(dataUrl: string): Blob {
   }
 }
 
-// Upload file payload with automatic cloud chunking (supports large files up to 20MB+)
-export async function dbUploadFileToRoom(roomCode: string, file: File): Promise<SharedFile | null> {
+// Upload file to secure production-ready Firebase Storage with upload progress and cancellation
+export async function dbUploadFileToRoom(
+  roomCode: string, 
+  file: File,
+  onProgress?: (progress: number) => void,
+  cancelRef?: { cancel?: () => void }
+): Promise<SharedFile | null> {
   const upperCode = roomCode.trim().toUpperCase();
-  const room = await dbGetRoom(upperCode);
-  if (!room) return null;
-
   const fileId = crypto.randomUUID();
   const uploader = getDeviceName();
 
-  let base64Data = '';
-  const chunks: string[] = [];
-  try {
-    base64Data = await readAsDataUrl(file);
-    // Split into chunks of 500,000 characters to comfortably stay under Firestore 1MB limits
-    const chunkSize = 500000;
-    for (let i = 0; i < base64Data.length; i += chunkSize) {
-      chunks.push(base64Data.substring(i, i + chunkSize));
-    }
-  } catch (err) {
-    console.error('FileReader encoding failure:', err);
-    throw new Error('Failed to encode/read the file stream.');
+  // 1. Establish reference to Firebase Storage file space
+  const storageRef = ref(storage, `rooms/${upperCode}/${fileId}_${file.name}`);
+  const uploadTask = uploadBytesResumable(storageRef, file);
+
+  // Hook cancel method if requested
+  if (cancelRef) {
+    cancelRef.cancel = () => {
+      uploadTask.cancel();
+    };
   }
 
-  // Save the chunk files to Firestore
-  try {
-    await Promise.all(chunks.map((chunk, index) => {
-      const chunkRef = doc(db, 'file_chunks', `${fileId}_chunk_${index}`);
-      return setDoc(chunkRef, { text: chunk });
-    }));
+  return new Promise((resolve, reject) => {
+    uploadTask.on('state_changed', 
+      (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        if (onProgress) {
+          onProgress(progress);
+        }
+      }, 
+      (error) => {
+        console.error('Firebase Storage upload failed:', error);
+        reject(error);
+      }, 
+      async () => {
+        try {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          
+          const newFile: SharedFile = {
+            id: fileId,
+            name: file.name,
+            size: file.size,
+            type: file.type || 'application/octet-stream',
+            uploadedAt: new Date().toISOString(),
+            uploader,
+            dataUrl: downloadURL,
+            isStorage: true
+          };
 
-    // Cache locally for instant reuse if quota allows
-    try {
-      localStorage.setItem(`68share_local_file_content_${fileId}`, base64Data);
-    } catch (lc) {
-      console.warn('LocalStorage quota filled. Cached in Firestore only.');
-    }
-  } catch (e: any) {
-    console.error('Cloud chunk transfer error:', e);
-    throw new Error(e?.message || 'Could not upload file packages to the cloud.');
-  }
+          const activityItem: ActivityItem = {
+            id: crypto.randomUUID(),
+            timestamp: new Date().toISOString(),
+            type: 'upload',
+            details: `${uploader} uploaded "${file.name}" (${formatBytes(file.size)}).`,
+          };
 
-  const newFile: SharedFile = {
-    id: fileId,
-    name: file.name,
-    size: file.size,
-    type: file.type || 'application/octet-stream',
-    uploadedAt: new Date().toISOString(),
-    uploader,
-    dataUrl: `FIRESTORE_CHUNKED:${fileId}`,
-    isChunked: true,
-    chunkCount: chunks.length,
-  };
+          // 2. Commit metadata safely to room document using atomic runTransaction
+          const roomRef = doc(db, 'rooms', upperCode);
+          await runTransaction(db, async (transaction) => {
+            const roomSnap = await transaction.get(roomRef);
+            if (!roomSnap.exists()) {
+              throw new Error("Room was closed or has expired.");
+            }
+            
+            const roomData = roomSnap.data() as Room;
+            const updatedFiles = [newFile, ...(roomData.files || [])];
+            const updatedActivity = [activityItem, ...(roomData.activity || [])];
 
-  const activityItem: ActivityItem = {
-    id: crypto.randomUUID(),
-    timestamp: new Date().toISOString(),
-    type: 'upload',
-    details: `${uploader} uploaded "${file.name}" (${formatBytes(file.size)}) [${chunks.length} chunks].`,
-  };
+            transaction.update(roomRef, {
+              files: updatedFiles,
+              activity: updatedActivity,
+              lastActiveAt: new Date().toISOString()
+            });
+          });
 
-  const updatedFiles = [newFile, ...room.files];
-  const updatedActivity = [activityItem, ...room.activity];
-  
-  const updatedRoom = {
-    ...room,
-    files: updatedFiles,
-    activity: updatedActivity,
-  };
-
-  await dbUpdateRoom(updatedRoom);
-
-  return newFile;
+          resolve(newFile);
+        } catch (txError) {
+          console.error("Presence and files transaction error:", txError);
+          reject(txError);
+        }
+      }
+    );
+  });
 }
 
-// Fetch file payload with hybrid caching and chunk re-assembly
+// Fetch file payload with robust in-memory caching and backwards compatibility fallback for chunks
 export async function dbGetFileData(fileId: string, isChunked?: boolean, chunkCount?: number): Promise<string | null> {
-  // 1. Check local device memory cache first
-  try {
-    const cached = localStorage.getItem(`68share_local_file_content_${fileId}`);
-    if (cached) {
-      return cached;
-    }
-  } catch (eh) {
-    console.warn('LocalStorage lookup skipped:', eh);
+  // 1. Check RAM memory cache first (ultra stable, avoids storage crashes)
+  const cached = IN_MEMORY_FILE_CACHE.get(fileId);
+  if (cached) {
+    return cached;
   }
 
-  // 2. Query Firestore and gather chunks
+  // 2. Backward compatibility with older Firestore chunks (if exists)
   try {
     if (isChunked && chunkCount && chunkCount > 0) {
-      // Pull all segments concurrently
       const chunkPromises = [];
       for (let i = 0; i < chunkCount; i++) {
         const chunkRef = doc(db, 'file_chunks', `${fileId}_chunk_${i}`);
@@ -416,68 +517,74 @@ export async function dbGetFileData(fileId: string, isChunked?: boolean, chunkCo
       }).join('');
 
       if (joinedData) {
-        // Cache locally for extremely fast future download
-        try {
-          localStorage.setItem(`68share_local_file_content_${fileId}`, joinedData);
-        } catch (lh) {}
+        IN_MEMORY_FILE_CACHE.set(fileId, joinedData);
         return joinedData;
       }
     } else {
-      // Legacy unchunked file retrieval fallback
       const docRef = doc(db, 'file_contents', fileId);
       const snap = await getDoc(docRef);
       if (snap.exists()) {
         const dataUrl = snap.data().dataUrl || null;
         if (dataUrl) {
-          try {
-            localStorage.setItem(`68share_local_file_content_${fileId}`, dataUrl);
-          } catch (lh) {}
+          IN_MEMORY_FILE_CACHE.set(fileId, dataUrl);
         }
         return dataUrl;
       }
     }
   } catch (e) {
-    console.error('Failed fetching file segments from cloud database:', e);
+    console.error('Failed retrieving backward-compatible file segments from Firestore:', e);
   }
 
   return null;
 }
 
-// Initiate authentic file download with URL revocation (zero quality/integrity loss)
+// Initiate authentic file download with support for both remote Storage download URLs and legacy chunk re-assembly
 export async function dbTriggerDownload(file: SharedFile, roomCode: string): Promise<void> {
   const uploader = getDeviceName();
-  let base64Data: string | null = null;
 
   try {
-    if (file.dataUrl && file.dataUrl.startsWith('FIRESTORE_CHUNKED:')) {
-      const fileId = file.dataUrl.substring(18);
-      base64Data = await dbGetFileData(fileId, true, file.chunkCount);
-    } else if (file.dataUrl && file.dataUrl.startsWith('FIRESTORE:')) {
-      const fileId = file.dataUrl.substring(10);
-      base64Data = await dbGetFileData(fileId);
-    } else if (file.isChunked) {
-      base64Data = await dbGetFileData(file.id, true, file.chunkCount);
-    } else {
-      base64Data = await dbGetFileData(file.id);
-    }
-
-    if (base64Data) {
-      // Convert Data URL string representation to an actual Blob object
-      const blob = dataURLtoBlob(base64Data);
-      const url = URL.createObjectURL(blob);
+    if (file.isStorage && file.dataUrl) {
+      // 1. Real Firebase Storage direct download via link
       const link = document.createElement('a');
-      link.href = url;
+      link.href = file.dataUrl;
       link.download = file.name;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(url);
     } else {
-      throw new Error("No data content located.");
+      // 2. Legacy chunk reassembly fallback (100% backward compatible)
+      let base64Data: string | null = null;
+      if (file.dataUrl && file.dataUrl.startsWith('FIRESTORE_CHUNKED:')) {
+        const fileId = file.dataUrl.substring(18);
+        base64Data = await dbGetFileData(fileId, true, file.chunkCount);
+      } else if (file.dataUrl && file.dataUrl.startsWith('FIRESTORE:')) {
+        const fileId = file.dataUrl.substring(10);
+        base64Data = await dbGetFileData(fileId);
+      } else if (file.isChunked) {
+        base64Data = await dbGetFileData(file.id, true, file.chunkCount);
+      } else {
+        base64Data = await dbGetFileData(file.id);
+      }
+
+      if (base64Data) {
+        const blob = dataURLtoBlob(base64Data);
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = file.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } else {
+        throw new Error("No data content located.");
+      }
     }
   } catch (err: any) {
     console.error('Trigger download fallback active:', err);
-    // Local download sandbox fallback
+    // Simple mock container download for testing
     const blob = new Blob([`Simulated secure proxy container string for: ${file.name}`], { type: file.type });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -489,23 +596,28 @@ export async function dbTriggerDownload(file: SharedFile, roomCode: string): Pro
     URL.revokeObjectURL(url);
   }
 
-  // Dispatch download event to activity feed
+  // Log download activity via transaction
   try {
     const upperCode = roomCode.trim().toUpperCase();
-    const room = await dbGetRoom(upperCode);
-    if (room) {
+    const roomRef = doc(db, 'rooms', upperCode);
+    
+    await runTransaction(db, async (transaction) => {
+      const roomSnap = await transaction.get(roomRef);
+      if (!roomSnap.exists()) return;
+      
+      const roomData = roomSnap.data() as Room;
       const activityItem: ActivityItem = {
         id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
         type: 'download',
         details: `${uploader} downloaded "${file.name}".`,
       };
-      const updatedActivity = [activityItem, ...room.activity];
-      await dbUpdateRoom({
-        ...room,
+      
+      const updatedActivity = [activityItem, ...(roomData.activity || [])];
+      transaction.update(roomRef, {
         activity: updatedActivity
       });
-    }
+    });
   } catch (e) {
     console.error('Activity logger error:', e);
   }

@@ -11,6 +11,9 @@ import { RoomDashboard } from './components/RoomDashboard';
 import { Room } from './types';
 import { dbGetRoom } from './lib/storage';
 import { useToast } from './components/Toast';
+import { ErrorMonitor } from './lib/errorMonitor';
+import { FeedbackModal } from './components/FeedbackModal';
+import { PwaInstallPrompt } from './components/PwaInstallPrompt';
 
 export default function App() {
   const { toast } = useToast();
@@ -19,6 +22,9 @@ export default function App() {
 
   // Parse URL search parameters on boot to see if direct link or QR scan was used
   useEffect(() => {
+    // Initialize exception reporter
+    ErrorMonitor.init();
+
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
     if (roomParam) {
@@ -128,6 +134,10 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+
+      {/* Persistent pre-launch triggers */}
+      <FeedbackModal />
+      <PwaInstallPrompt />
 
     </div>
   );

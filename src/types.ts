@@ -7,9 +7,10 @@ export interface SharedFile {
   type: string;
   uploadedAt: string;
   uploader: string;
-  dataUrl?: string; // Base64 content for real download/preview (optional/large-file warning capped)
+  dataUrl?: string; // Base64 content or remote download URL
   isChunked?: boolean;
   chunkCount?: number;
+  isStorage?: boolean; // Tag for files saved in Firebase Storage
 }
 
 export interface ClipboardEntry {
@@ -32,6 +33,8 @@ export interface Room {
   duration: RoomDuration;
   expiresAt: string;
   password?: string | null;
+  passwordHash?: string | null;
+  passwordSalt?: string | null;
   files: SharedFile[];
   activity: ActivityItem[];
   usersOnline: number;
