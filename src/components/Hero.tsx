@@ -86,8 +86,8 @@ export function Hero({ onCreateRoom, onJoinRoom }: HeroProps) {
                 transition={{ duration: 0.6, delay: 0.1 }}
                 className="text-4xl sm:text-5xl md:text-6xl font-display font-medium tracking-tight text-[#0F172A] leading-[1.1] md:leading-[1.08]"
               >
-                Share Files Between <br />
-                Devices In{' '}
+                Instant Secure <br />
+                File Sharing In{' '}
                 <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 font-extrabold pb-1">
                   Seconds.
                 </span>
@@ -100,7 +100,7 @@ export function Hero({ onCreateRoom, onJoinRoom }: HeroProps) {
                 transition={{ duration: 0.6, delay: 0.2 }}
                 className="text-base sm:text-lg text-[#64748B] mt-5 font-sans leading-[1.75]"
               >
-                Create a temporary room, share a secured code, and instantly transfer directories or documents between smartphones, tablets, laptops, and teams. No registration, client logs, or bloated cloud accounts required.
+                Experience secure file sharing and browser file transfer with zero signups or speed limits. Create a temporary room, scan a QR code, and instantly transfer files between devices or sync clipboards in real-time.
               </motion.p>
 
               {/* Action Area */}
@@ -139,6 +139,7 @@ export function Hero({ onCreateRoom, onJoinRoom }: HeroProps) {
                       value={joinCode}
                       onChange={(e) => handleChangeCode(e.target.value)}
                       placeholder="Enter 6-char code"
+                      aria-label="6-character Room Code"
                       className="pl-5 pr-1 py-2 font-mono font-bold text-neutral-900 placeholder:text-neutral-400 focus:outline-none w-full tracking-wider text-left uppercase text-sm"
                       autoFocus
                       disabled={isChecking}
@@ -532,7 +533,7 @@ export function Hero({ onCreateRoom, onJoinRoom }: HeroProps) {
                   <h5 className="text-[10px] font-display font-extrabold text-[#64748B] uppercase tracking-wider mb-2.5">Secure Invitation Code</h5>
                   <div className="bg-white p-3 rounded-2xl border border-neutral-200 shadow-sm flex items-center justify-center">
                     <img 
-                      src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&color=2563eb&bgcolor=ffffff&data=https://68share.io/join/68A7F2" 
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&color=2563eb&bgcolor=ffffff&data=${encodeURIComponent('https://68share.com/join/68A7F2')}`} 
                       alt="Room QR Code" 
                       className="w-24 h-24 select-none"
                     />

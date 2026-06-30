@@ -145,7 +145,7 @@ export function Features() {
               </div>
               <h3 className="text-xl sm:text-2xl font-display font-bold text-[#0F172A] tracking-tight">Intelligent Filesize Handling</h3>
               <p className="text-sm text-[#64748B] mt-3 max-w-xl font-sans leading-relaxed">
-                Seamlessly transfer photos, folders, docs, and rich binary files up to 4MB inside index-backed client memory. Prompts with warning metrics to optimize transmission integrity.
+                Seamlessly transfer photos, folders, docs, and rich binary files up to 25MB inside index-backed client memory. Prompts with warning metrics to optimize transmission integrity.
               </p>
             </div>
             <div className="mt-8 flex items-center justify-between">

@@ -3,12 +3,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   QrCode, Clipboard, Check, Users, Clock, UploadCloud, File, Download, 
   ShieldAlert, ArrowLeft, Lock, AlertTriangle, RefreshCw, FileText, Image as ImageIcon, Film, Archive,
-  Laptop, Smartphone, Tablet, Monitor, Eye, X, Loader2
+  Laptop, Smartphone, Tablet, Monitor, Eye, X, Loader2, Share2, Sparkles, Wifi, Shield, Info, Activity, Music
 } from 'lucide-react';
 import { Room, SharedFile, ActivityItem } from '../types';
 import { 
   dbGetRoom, dbUpdateRoom, dbSubscribeRoom, dbUploadFileToRoom, dbTriggerDownload, dbGetFileData,
-  formatBytes, getQrCodeUrl, getDeviceName, dbJoinRoomPresence, dbLeaveRoomPresence
+  formatBytes, getQrCodeUrl, getDeviceName, dbJoinRoomPresence, dbLeaveRoomPresence, dataURLtoBlob,
+  dbDeleteRoom
 } from '../lib/storage';
 import { hashPassword } from '../lib/crypto';
 import { AbuseProtection } from '../lib/errorMonitor';
@@ -56,15 +57,63 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
+  const activeObjectUrlRef = useRef<string | null>(null);
+
+  // Room deletion states
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteRoom = async () => {
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteRoom = async () => {
+    setIsDeleting(true);
+    try {
+      await dbDeleteRoom(roomCode);
+      toast('Room successfully deleted.', 'success');
+      onLeave();
+    } catch (e: any) {
+      console.error('Delete room failed:', e);
+      toast('Failed to delete room: ' + (e.message || 'Unknown error'), 'error');
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
 
   const isPreviewable = (fileName: string) => {
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
     const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'];
     const textExts = ['txt', 'md', 'json', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'csv', 'xml', 'ini', 'yaml', 'yml'];
-    return imageExts.includes(ext) || textExts.includes(ext);
+    const pdfExts = ['pdf'];
+    const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac'];
+    const videoExts = ['mp4', 'webm', 'mov'];
+    return imageExts.includes(ext) || textExts.includes(ext) || pdfExts.includes(ext) || audioExts.includes(ext) || videoExts.includes(ext);
+  };
+
+  const closePreview = () => {
+    if (activeObjectUrlRef.current) {
+      try {
+        URL.revokeObjectURL(activeObjectUrlRef.current);
+      } catch (e) {
+        console.warn('Failed to revoke object URL:', e);
+      }
+      activeObjectUrlRef.current = null;
+    }
+    setPreviewFile(null);
+    setPreviewContent(null);
   };
 
   const handlePreviewFile = async (file: SharedFile) => {
+    // Revoke any previous object URL to avoid leaks
+    if (activeObjectUrlRef.current) {
+      try {
+        URL.revokeObjectURL(activeObjectUrlRef.current);
+      } catch (e) {}
+      activeObjectUrlRef.current = null;
+    }
+
     setPreviewFile(file);
     setPreviewLoading(true);
     setPreviewError(null);
@@ -73,8 +122,12 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
     try {
       const ext = file.name.split('.').pop()?.toLowerCase() || '';
       const isImg = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext);
+      const isPdf = ['pdf'].includes(ext);
+      const isAudio = ['mp3', 'wav', 'ogg', 'm4a', 'aac'].includes(ext);
+      const isVideo = ['mp4', 'webm', 'mov'].includes(ext);
+      const isMedia = isImg || isPdf || isAudio || isVideo;
       
-      if (isImg) {
+      if (isMedia) {
         if (file.isStorage && file.dataUrl) {
           setPreviewContent(file.dataUrl);
         } else {
@@ -92,9 +145,16 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
           }
 
           if (base64Data) {
-            setPreviewContent(base64Data);
+            if (isPdf || isAudio || isVideo) {
+              const blob = dataURLtoBlob(base64Data);
+              const objectUrl = URL.createObjectURL(blob);
+              activeObjectUrlRef.current = objectUrl;
+              setPreviewContent(objectUrl);
+            } else {
+              setPreviewContent(base64Data);
+            }
           } else {
-            throw new Error("Unable to retrieve image content");
+            throw new Error("Unable to retrieve file content");
           }
         }
       } else {
@@ -530,39 +590,45 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
     <section className="py-8 max-w-5xl mx-auto px-4 md:px-6 relative z-10 font-sans">
       
       {/* Top dashboard control header bar */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-6 border-b border-neutral-205/60 pb-6 mb-8">
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-6 border-b border-neutral-200/60 pb-6 mb-8">
         <div className="flex items-center gap-4">
           <button 
+            id="back-btn"
             onClick={onLeave}
-            className="p-2.5 rounded-full border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-500 hover:text-neutral-800 transition-colors cursor-pointer shadow-sm flex items-center justify-center shrink-0"
+            className="p-2.5 rounded-full border border-neutral-200 bg-white hover:bg-neutral-50 hover:text-neutral-950 text-neutral-500 hover:scale-105 active:scale-95 hover:shadow-sm transition-all duration-200 cursor-pointer flex items-center justify-center shrink-0 animate-card-gpu"
             title="Go Back"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div className="text-left">
-            <h1 className="text-2xl font-bold text-neutral-900 tracking-tight leading-tight">{room.name}</h1>
-            <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse shrink-0" />
+              <h1 className="text-2xl font-bold text-neutral-900 tracking-tight leading-tight">{room.name}</h1>
+            </div>
+            <div className="flex items-center gap-3 mt-2 flex-wrap">
               <span className="text-[10px] font-sans font-bold tracking-wider text-neutral-400 uppercase">Room Code</span>
-              <span className="font-mono text-xs font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">{room.code}</span>
-              
-              <button 
-                onClick={handleCopyCode}
-                className="text-xs text-neutral-500 hover:text-neutral-800 font-medium flex items-center gap-1 font-sans cursor-pointer transition-colors"
-                title="Copy Code"
-              >
-                {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Clipboard className="w-3.5 h-3.5" />}
-                <span>{copiedCode ? 'Copied' : 'Copy'}</span>
-              </button>
+              <div className="flex items-center gap-1.5 bg-indigo-50/50 border border-indigo-100/80 rounded-lg px-2 py-0.5">
+                <span className="font-mono text-xs font-bold text-indigo-700">{room.code}</span>
+                <button 
+                  id="copy-code-badge"
+                  onClick={handleCopyCode}
+                  className="text-neutral-400 hover:text-indigo-600 transition-colors duration-150 cursor-pointer"
+                  title="Copy Room Code"
+                >
+                  {copiedCode ? <Check className="w-3 h-3 text-emerald-600" /> : <Clipboard className="w-3 h-3" />}
+                </button>
+              </div>
 
               <span className="text-neutral-300">|</span>
 
               <button 
+                id="share-qr-toggle"
                 onClick={() => setShowHeaderQr(!showHeaderQr)}
-                className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold flex items-center gap-1 font-sans cursor-pointer transition-colors"
+                className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 font-sans cursor-pointer transition-all duration-150 active:scale-95"
                 aria-expanded={showHeaderQr}
               >
                 <QrCode className="w-3.5 h-3.5" />
-                <span>{showHeaderQr ? 'Hide QR' : 'Share QR Code'}</span>
+                <span>{showHeaderQr ? 'Hide QR Code' : 'Share QR Code'}</span>
               </button>
             </div>
 
@@ -570,69 +636,79 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
             <AnimatePresence>
               {showHeaderQr && (
                 <motion.div
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  initial={{ opacity: 0, y: 12, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  transition={{ duration: 0.2 }}
-                  className="absolute left-0 mt-3 z-50 bg-white border border-neutral-200 shadow-xl rounded-2xl p-5 w-[300px] text-left"
+                  exit={{ opacity: 0, y: 12, scale: 0.95 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                  className="absolute left-0 mt-3 z-50 bg-white border border-neutral-200/90 shadow-2xl rounded-2xl p-5 w-[310px] text-left"
                 >
-                  <div className="flex items-center justify-between border-b border-neutral-100 pb-2 mb-3">
+                  <div className="flex items-center justify-between border-b border-neutral-100 pb-2.5 mb-3">
                     <div className="flex items-center gap-2">
                       <QrCode className="w-4 h-4 text-indigo-600" />
-                      <span className="font-sans font-semibold text-neutral-800 text-sm">Join via QR Code</span>
+                      <span className="font-sans font-bold text-neutral-800 text-sm">Join via QR Code</span>
                     </div>
+                    <button 
+                      onClick={() => setShowHeaderQr(false)}
+                      className="text-neutral-400 hover:text-neutral-700 rounded-full p-1 hover:bg-neutral-50 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
 
                   <div className="flex flex-col items-center">
                     {/* Interactive Color Settings */}
-                    <div className="flex items-center gap-1.5 mb-3 bg-neutral-50 px-2.5 py-1 rounded-full border border-neutral-100">
-                      <span className="text-[9px] font-sans font-bold text-neutral-400 tracking-wider uppercase mr-1">Color:</span>
-                      {[
-                        { name: 'Blue', hex: '2563eb', bg: 'bg-blue-600' },
-                        { name: 'Dark', hex: '111111', bg: 'bg-neutral-900' },
-                        { name: 'Emerald', hex: '059669', bg: 'bg-emerald-600' },
-                        { name: 'Amber', hex: 'ea580c', bg: 'bg-amber-600' },
-                      ].map((swatch) => (
-                        <button
-                          key={swatch.name}
-                          onClick={() => setQrColorCode(swatch.hex)}
-                          className={`w-3.5 h-3.5 rounded-full cursor-pointer transition-all ${swatch.bg} ${
-                            qrColorCode === swatch.hex ? 'ring-2 ring-indigo-500 scale-110' : 'border border-white hover:scale-105'
-                          }`}
-                        />
-                      ))}
+                    <div className="flex items-center justify-between w-full mb-3 bg-neutral-50 px-3 py-1.5 rounded-xl border border-neutral-150/40">
+                      <span className="text-[9px] font-sans font-bold text-neutral-400 tracking-wider uppercase">Style Color:</span>
+                      <div className="flex items-center gap-1.5">
+                        {[
+                          { name: 'Blue', hex: '2563eb', bg: 'bg-blue-600' },
+                          { name: 'Dark', hex: '111111', bg: 'bg-neutral-900' },
+                          { name: 'Emerald', hex: '059669', bg: 'bg-emerald-600' },
+                          { name: 'Amber', hex: 'ea580c', bg: 'bg-amber-600' },
+                        ].map((swatch) => (
+                          <button
+                            key={swatch.name}
+                            onClick={() => setQrColorCode(swatch.hex)}
+                            className={`w-3.5 h-3.5 rounded-full cursor-pointer transition-all ${swatch.bg} ${
+                              qrColorCode === swatch.hex ? 'ring-2 ring-indigo-500 scale-110' : 'border border-white hover:scale-105'
+                            }`}
+                            title={swatch.name}
+                          />
+                        ))}
+                      </div>
                     </div>
 
                     {/* QR Code */}
-                    <div className="bg-white p-2 rounded-xl border border-neutral-200 flex items-center justify-center mb-3">
+                    <div className="bg-white p-2.5 rounded-2xl border border-neutral-200 flex items-center justify-center mb-3 shadow-3xs relative overflow-hidden group/qr">
                       <img 
                         src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&color=${qrColorCode}&bgcolor=ffffff&data=${encodeURIComponent(getShareUrl())}`} 
                         alt="Join Room QR Code" 
-                        className="w-32 h-32 select-none"
+                        className="w-32 h-32 select-none group-hover/qr:scale-[1.02] transition-transform duration-300"
                         referrerPolicy="no-referrer"
                       />
                     </div>
 
                     {/* Actions */}
-                    <div className="w-full flex gap-2 border-t border-neutral-100 pt-2.5">
+                    <div className="w-full flex gap-2 border-t border-neutral-100 pt-3">
                       <button
                         onClick={() => {
                           const customUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=${qrColorCode}&bgcolor=ffffff&data=${encodeURIComponent(getShareUrl())}`;
                           window.open(customUrl, '_blank');
                         }}
-                        className="flex-1 bg-white hover:bg-neutral-50 text-neutral-700 border border-neutral-200 py-1.5 rounded-xl font-sans text-xs font-semibold select-none cursor-pointer transition-colors text-center shadow-xs flex items-center justify-center gap-1"
+                        className="flex-1 bg-white hover:bg-neutral-50 text-neutral-700 border border-neutral-200 py-2 rounded-xl font-sans text-xs font-semibold select-none cursor-pointer transition-colors text-center shadow-3xs flex items-center justify-center gap-1.5 animate-card-gpu"
                       >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Save Image</span>
+                        <Download className="w-3.5 h-3.5 text-neutral-500" />
+                        <span>Save</span>
                       </button>
 
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(getShareUrl());
                           setCopiedQrLink(true);
+                          toast('Room link copied!', 'success', 1500);
                           setTimeout(() => setCopiedQrLink(false), 2000);
                         }}
-                        className="flex-1 bg-indigo-600 hover:bg-indigo-750 text-white py-1.5 rounded-xl font-sans text-xs font-semibold select-none cursor-pointer transition-colors text-center shadow-xs flex items-center justify-center gap-1"
+                        className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-xl font-sans text-xs font-semibold select-none cursor-pointer transition-all duration-150 text-center shadow-xs flex items-center justify-center gap-1.5 hover:shadow-indigo-500/10"
                       >
                         {copiedQrLink ? <Check className="w-3.5 h-3.5" /> : <Clipboard className="w-3.5 h-3.5" />}
                         <span>{copiedQrLink ? 'Copied' : 'Copy link'}</span>
@@ -646,25 +722,36 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
         </div>
 
         {/* Status Indicators */}
-        <div className="flex items-center gap-4 bg-white border border-neutral-200 rounded-2xl p-3 shrink-0 self-start md:self-auto flex-wrap sm:flex-nowrap shadow-xs md:max-w-md">
-          
-          <div className="flex items-center gap-2 border-r border-neutral-200 pr-4 shrink-0">
-            <span className="relative flex h-2.5 w-2.5">
+        <div className="flex items-center gap-3.5 flex-wrap md:flex-nowrap shrink-0">
+          {/* Live Screens Counter Widget */}
+          <div className="flex items-center gap-2.5 bg-white border border-neutral-200/80 rounded-2xl p-3 px-4 shadow-3xs hover:shadow-2xs transition-shadow duration-200">
+            <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <span className="text-xs font-sans font-semibold text-neutral-600">
-              {room.activeUsers?.length || room.usersOnline || 1} Screen{(room.activeUsers?.length || room.usersOnline || 1) > 1 ? 's' : ''} Connected
+            <span className="text-xs font-sans font-bold text-neutral-700">
+              {room.activeUsers?.length || room.usersOnline || 1} Screen{(room.activeUsers?.length || room.usersOnline || 1) > 1 ? 's' : ''} Live
             </span>
           </div>
 
-          <div className="flex items-center gap-1 px-3 py-1 bg-amber-50 border border-amber-200/50 rounded-xl">
+          {/* Expiration Timer Widget */}
+          <div className="flex items-center gap-2.5 bg-amber-50/50 border border-amber-200/30 rounded-2xl p-3 px-4 shadow-3xs">
             <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-            <span className="font-mono text-xs font-bold text-amber-700">
-              Expires: {timeLeft}
+            <span className="font-sans text-xs font-semibold text-neutral-500">
+              Expires in: <span className="font-mono font-bold text-amber-700">{timeLeft}</span>
             </span>
           </div>
 
+          {/* Delete Room Button */}
+          <button
+            id="delete-room-btn"
+            onClick={handleDeleteRoom}
+            className="flex items-center gap-2 bg-rose-50 hover:bg-rose-100 border border-rose-150 text-rose-600 hover:text-rose-750 rounded-2xl p-3 px-4 shadow-3xs transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] font-sans text-xs font-bold animate-card-gpu"
+            title="Delete Room"
+          >
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>Delete Room</span>
+          </button>
         </div>
       </div>
 
@@ -674,29 +761,35 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
         {/* Left Columns: Upload area & file listing or Clipboard */}
         <div className="lg:col-span-8 flex flex-col gap-6">
           
-          {/* Tab Selector */}
-          <div className="flex bg-[#F3F4F6] p-1 rounded-2xl border border-neutral-200/50 gap-1 shadow-sm">
+          {/* Tab Selector with spring slide animation */}
+          <div className="flex bg-neutral-100 p-1.5 rounded-2xl border border-neutral-200/40 gap-1.5 relative z-10">
             <button
               onClick={() => setActiveTab('files')}
-              className={`flex-1 font-sans font-bold text-xs py-3 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                activeTab === 'files'
-                  ? 'bg-white text-[#2563EB] shadow-xs border border-black/5 font-extrabold'
-                  : 'text-neutral-500 hover:text-neutral-800'
-              }`}
+              className="flex-1 font-sans font-bold text-xs py-2.5 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2 relative z-20 select-none"
             >
-              <File className="w-4 h-4 text-neutral-400" />
-              <span>Files Vault</span>
+              {activeTab === 'files' && (
+                <motion.div
+                  layoutId="activeTabPill"
+                  className="absolute inset-0 bg-white rounded-xl shadow-xs border border-black/5 -z-10"
+                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                />
+              )}
+              <File className={`w-4 h-4 transition-colors ${activeTab === 'files' ? 'text-indigo-600' : 'text-neutral-400'}`} />
+              <span className={activeTab === 'files' ? 'text-neutral-900 font-extrabold' : 'text-neutral-500 hover:text-neutral-800'}>Files Vault</span>
             </button>
             <button
               onClick={() => setActiveTab('clipboard')}
-              className={`flex-1 font-sans font-bold text-xs py-3 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                activeTab === 'clipboard'
-                  ? 'bg-white text-[#2563EB] shadow-xs border border-black/5 font-extrabold'
-                  : 'text-neutral-500 hover:text-neutral-800'
-              }`}
+              className="flex-1 font-sans font-bold text-xs py-2.5 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2 relative z-20 select-none"
             >
-              <Clipboard className="w-4 h-4 text-neutral-400" />
-              <span>Clipboard Sharing</span>
+              {activeTab === 'clipboard' && (
+                <motion.div
+                  layoutId="activeTabPill"
+                  className="absolute inset-0 bg-white rounded-xl shadow-xs border border-black/5 -z-10"
+                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                />
+              )}
+              <Clipboard className={`w-4 h-4 transition-colors ${activeTab === 'clipboard' ? 'text-indigo-600' : 'text-neutral-400'}`} />
+              <span className={activeTab === 'clipboard' ? 'text-neutral-900 font-extrabold' : 'text-neutral-500 hover:text-neutral-800'}>Clipboard Sharing</span>
             </button>
           </div>
 
@@ -708,10 +801,10 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 onClick={triggerSelectFile}
-                className={`cursor-pointer group relative p-8 md:p-10 border-2 border-dashed rounded-3xl flex flex-col items-center text-center transition-all ${
+                className={`cursor-pointer group relative p-8 md:p-10 border-2 border-dashed rounded-[32px] flex flex-col items-center text-center transition-all duration-300 ${
                   isDragging 
-                    ? 'border-indigo-500 bg-indigo-50/10' 
-                    : 'border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-md'
+                    ? 'border-indigo-500 bg-indigo-50/20' 
+                    : 'border-neutral-200 bg-white hover:border-indigo-400 hover:shadow-lg'
                 }`}
               >
                 <input 
@@ -721,19 +814,28 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
                   className="hidden"
                 />
                 
-                <div className="w-12 h-12 rounded-2xl bg-neutral-50 border border-neutral-150 flex items-center justify-center text-neutral-500 group-hover:scale-105 transition-transform duration-300">
-                  <UploadCloud className="w-6 h-6 text-indigo-600 animate-pulse" />
+                <div className="w-14 h-14 rounded-2xl bg-indigo-50/50 border border-indigo-100 flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform duration-300 shadow-3xs">
+                  <UploadCloud className="w-7 h-7 text-indigo-600 animate-pulse" />
                 </div>
 
-                <h3 className="font-sans font-bold text-neutral-800 mt-4 text-[15px] tracking-tight">
+                <h3 className="font-sans font-bold text-neutral-800 mt-5 text-[15px] tracking-tight">
                   {isUploading ? 'Uploading file...' : 'Drag & Drop files here'}
                 </h3>
                 
-                <p className="font-sans text-xs text-neutral-500 mt-1 max-w-[320px]">
+                <p className="font-sans text-xs text-neutral-500 mt-1 max-w-[340px] leading-relaxed">
                   {isUploading 
-                    ? 'Uploading file segments and syncing across all connected screens...' 
-                    : 'or click to browse local files. Supports images, archives, datasets, videos and documents up to 25MB.'}
+                    ? 'Uploading secure file segments and syncing across all connected screens...' 
+                    : 'or click to browse local files. Shared files immediately sync for high-speed download.'}
                 </p>
+
+                {/* Acceptable file types guides */}
+                <div className="flex flex-wrap items-center justify-center gap-1.5 mt-5 max-w-md">
+                  <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-semibold rounded-lg border border-emerald-100/50">Images</span>
+                  <span className="px-2.5 py-1 bg-rose-50 text-rose-700 text-[10px] font-semibold rounded-lg border border-rose-100/50 font-sans">Documents</span>
+                  <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-[10px] font-semibold rounded-lg border border-indigo-100/50 font-sans font-medium">Media</span>
+                  <span className="px-2.5 py-1 bg-amber-50 text-amber-700 text-[10px] font-semibold rounded-lg border border-amber-100/50 font-sans">Archives</span>
+                  <span className="px-2.5 py-1 bg-neutral-100 text-neutral-600 text-[10px] font-semibold rounded-lg border border-neutral-200/50">Up to 25MB</span>
+                </div>
 
                 {uploadProgress !== null && isUploading && (
                   <div className="w-full max-w-sm bg-indigo-50 border border-indigo-100/60 rounded-2xl p-3.5 mt-4 text-left shadow-xs">
@@ -777,7 +879,7 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
                           e.stopPropagation();
                           processFileUpload([failedFile]);
                         }}
-                        className="text-xs text-indigo-600 hover:text-indigo-800 font-sans font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                        className="text-xs text-indigo-600 hover:text-indigo-800 font-sans font-bold hover:underline flex items-center gap-1 cursor-pointer animate-card-gpu"
                       >
                         <RefreshCw className="w-3 h-3.5 animate-spin" />
                         <span>Retry Uploading "{failedFile.name}"</span>
@@ -788,22 +890,27 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
               </div>
 
               {/* Shared Files Grid Layout */}
-              <div className="bg-white border border-neutral-200/90 rounded-3xl p-6 shadow-sm text-left">
-                <h2 className="text-sm font-sans font-extrabold text-neutral-800 tracking-wider uppercase mb-5 flex items-center gap-2">
-                  <File className="w-4 h-4 text-[#2563EB]" />
-                  <span>Shared Files Catalog ({room.files.length})</span>
-                </h2>
+              <div className="bg-white border border-neutral-200/80 rounded-[28px] p-6 shadow-sm text-left">
+                <div className="flex items-center justify-between border-b border-neutral-100 pb-4 mb-5">
+                  <h2 className="text-sm font-sans font-extrabold text-neutral-800 tracking-wider uppercase flex items-center gap-2">
+                    <File className="w-4 h-4 text-[#2563EB]" />
+                    <span>Shared Files Catalog ({room.files.length})</span>
+                  </h2>
+                  <span className="text-xs text-neutral-400 font-medium font-sans">
+                    {room.files.length > 0 ? 'Click preview or download' : 'Vault is empty'}
+                  </span>
+                </div>
 
                 {room.files.length === 0 ? (
-                  <div className="py-20 text-center rounded-2xl bg-neutral-50/50 border border-neutral-100">
-                    <File className="w-10 h-10 text-neutral-300 mx-auto mb-3" />
-                    <h4 className="font-sans font-semibold text-sm text-neutral-700">No files uploaded yet</h4>
-                    <p className="font-sans text-xs text-neutral-500 mt-1 max-w-[285px] mx-auto">
-                      Files dragged and uploaded to this room will immediately pop up for download on all other connected devices.
+                  <div className="py-20 text-center rounded-2xl bg-neutral-50/40 border border-neutral-100">
+                    <File className="w-11 h-11 text-neutral-300 mx-auto mb-3 animate-pulse" />
+                    <h4 className="font-sans font-bold text-sm text-neutral-700">No files uploaded yet</h4>
+                    <p className="font-sans text-xs text-neutral-400 mt-1 max-w-[300px] mx-auto leading-relaxed">
+                      Files uploaded to this room will immediately sync and pop up for download on all other connected screen dashboards.
                     </p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[520px] overflow-y-auto pr-1">
                     <AnimatePresence initial={false}>
                       {room.files.map((file) => {
                         const visualTheme = getFileStyleAndIcon(file.name);
@@ -813,11 +920,13 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
                             initial={{ opacity: 0, scale: 0.97 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, x: -10 }}
+                            whileHover={{ y: -2 }}
+                            transition={{ type: "spring", stiffness: 350, damping: 25 }}
                             key={file.id}
-                            className="p-4 bg-white border border-neutral-150 hover:border-neutral-300 rounded-2xl flex flex-col justify-between gap-4 transition-all hover:shadow-xs group"
+                            className="p-4 bg-gradient-to-br from-white to-neutral-50/20 border border-neutral-200/80 hover:border-indigo-400/80 rounded-2xl flex flex-col justify-between gap-4 transition-all duration-300 hover:shadow-md group animate-card-gpu"
                           >
                             <div className="flex items-start gap-3">
-                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${visualTheme.bg}`}>
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-3xs ${visualTheme.bg}`}>
                                 {visualTheme.icon}
                               </div>
                               
@@ -825,21 +934,21 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
                                 <h4 className="text-xs font-sans font-bold text-neutral-800 truncate pr-0.5 group-hover:text-indigo-650 transition-colors" title={file.name}>
                                   {file.name}
                                 </h4>
-                                <p className="text-[10px] font-sans font-semibold text-neutral-400 uppercase tracking-wider mt-0.5">
+                                <p className="text-[9px] font-sans font-extrabold text-neutral-400 uppercase tracking-widest mt-0.5">
                                   {visualTheme.label}
                                 </p>
                               </div>
                             </div>
 
-                            <div className="flex items-center justify-between border-t border-neutral-100 pt-3 relative z-10">
+                            <div className="flex items-center justify-between border-t border-neutral-100/80 pt-3 relative z-10">
                               <div className="text-[10px] font-sans text-neutral-500 flex flex-col">
                                 <span className="font-bold text-neutral-700 font-mono">{formatBytes(file.size)}</span>
-                                <span className="text-neutral-400 mt-0.5 truncate max-w-[130px]" title={`Uploaded by ${file.uploader}`}>
+                                <span className="text-neutral-400 mt-0.5 truncate max-w-[130px] font-medium" title={`Uploaded by ${file.uploader}`}>
                                   By: {file.uploader}
                                 </span>
                               </div>
 
-                              <div className="flex gap-2 items-center">
+                              <div className="flex gap-1.5 items-center">
                                 {isPreviewable(file.name) && (
                                   <button
                                     id={`preview-btn-${file.id}`}
@@ -848,7 +957,7 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
                                       toast(`Assembling preview for "${file.name}"...`, 'success', 1500);
                                       await handlePreviewFile(file);
                                     }}
-                                    className="bg-neutral-100 hover:bg-neutral-200 text-neutral-700 w-8 h-8 rounded-xl flex items-center justify-center transition-all select-none shadow-3xs hover:scale-105 cursor-pointer border border-neutral-200/50"
+                                    className="bg-white hover:bg-neutral-50 text-neutral-600 hover:text-neutral-900 w-8.5 h-8.5 rounded-xl flex items-center justify-center transition-all select-none shadow-3xs hover:scale-105 cursor-pointer border border-neutral-200"
                                     title="Preview File"
                                   >
                                     <Eye className="w-4 h-4" />
@@ -867,7 +976,7 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
 
                                     await dbTriggerDownload(file, roomCode);
                                   }}
-                                  className="bg-indigo-600 hover:bg-indigo-750 text-white w-8 h-8 rounded-xl flex items-center justify-center transition-all select-none shadow-xs hover:scale-105 cursor-pointer"
+                                  className="bg-indigo-600 hover:bg-indigo-700 text-white w-8.5 h-8.5 rounded-xl flex items-center justify-center transition-all select-none shadow-xs hover:scale-105 cursor-pointer hover:shadow-indigo-500/10"
                                   title="Download File"
                                 >
                                   <Download className="w-4 h-4" />
@@ -892,17 +1001,20 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
         <div className="lg:col-span-4 flex flex-col gap-6">
           
           {/* Share widgets */}
-          <div className="bg-white border border-neutral-200/90 rounded-3xl p-5 shadow-sm text-left relative overflow-hidden">
-            <h3 className="font-sans font-bold text-neutral-400 text-[10px] tracking-wider uppercase mb-3.5">Room Accessories</h3>
+          <div className="bg-white border border-neutral-200/80 rounded-[28px] p-5 shadow-sm text-left relative overflow-hidden">
+            <h3 className="font-sans font-bold text-neutral-400 text-[10px] tracking-wider uppercase mb-3.5 flex items-center gap-1">
+              <Share2 className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Room Share accessories</span>
+            </h3>
             
             <div className="flex flex-col gap-3">
               <button 
                 onClick={handleCopyLink}
-                className="w-full bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-xl p-2.5 px-3 flex items-center justify-between text-left transition-all active:scale-[0.99] cursor-pointer group"
+                className="w-full bg-neutral-50/50 hover:bg-neutral-50 border border-neutral-200 hover:border-neutral-300 rounded-xl p-2.5 px-3 flex items-center justify-between text-left transition-all active:scale-[0.99] cursor-pointer group animate-card-gpu"
               >
                 <div className="truncate pr-2">
-                  <span className="text-[9px] font-sans text-neutral-400 uppercase block leading-none mb-1 font-bold">Copy Room Join URL</span>
-                  <span className="text-xs text-neutral-700 font-mono truncate block max-w-[180px]">{getShareUrl()}</span>
+                  <span className="text-[9px] font-sans text-neutral-400 uppercase block leading-none mb-1 font-extrabold">Copy Room Join URL</span>
+                  <span className="text-xs text-neutral-600 font-mono truncate block max-w-[185px]">{getShareUrl()}</span>
                 </div>
                 <div className="shrink-0 p-1.5 bg-white rounded-lg border border-neutral-200 shadow-3xs group-hover:border-neutral-300 transition-colors">
                   {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Clipboard className="w-3.5 h-3.5 text-neutral-500" />}
@@ -910,7 +1022,7 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
               </button>
 
               {/* QR expander */}
-              <div className="border border-neutral-150 rounded-xl p-3 bg-white shadow-3xs">
+              <div className="border border-neutral-200 rounded-xl p-3 bg-white shadow-3xs">
                 <button
                   onClick={() => setShowQr(!showQr)}
                   className="w-full font-sans text-xs font-semibold text-neutral-600 hover:text-neutral-850 flex items-center justify-between cursor-pointer"
@@ -932,12 +1044,12 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
                       <img 
                         src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&color=${qrColorCode}&bgcolor=ffffff&data=${encodeURIComponent(getShareUrl())}`} 
                         alt="Room QR Code" 
-                        className="w-24 h-24 select-none"
+                        className="w-24 h-24 select-none animate-card-gpu"
                         referrerPolicy="no-referrer"
                       />
                     </div>
-                    <span className="text-[10px] text-neutral-500 font-sans text-center max-w-[180px] leading-tight">
-                      Scan this code with an external device to connect to this room space instantly.
+                    <span className="text-[10px] text-neutral-400 font-sans text-center max-w-[190px] leading-relaxed font-medium">
+                      Scan this code with an external device camera to connect to this space instantly.
                     </span>
                   </motion.div>
                 )}
@@ -945,112 +1057,58 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
             </div>
           </div>
 
-          {/* Connected Screens (Real-time active users indicator) */}
-          <div className="bg-white border border-neutral-200/90 rounded-3xl p-5 shadow-sm text-left">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3 mb-4">
-              <span className="text-[10px] font-sans font-bold uppercase tracking-wider text-neutral-400">Connected Screens</span>
-              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200/30 text-[9.5px] font-sans font-extrabold text-emerald-600 uppercase tracking-wide">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping shrink-0" />
-                <span>{room.activeUsers?.length || room.usersOnline || 1} Live</span>
-              </span>
-            </div>
 
-            <div className="flex flex-col gap-2.5 max-h-[220px] overflow-y-auto pr-1">
-              {room.activeUsers && room.activeUsers.length > 0 ? (
-                room.activeUsers.map((u, idx) => {
-                  const isMe = u.deviceName === getDeviceName();
-                  return (
-                    <div 
-                      key={u.id || idx}
-                      className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${
-                        isMe 
-                          ? 'bg-blue-50/10 border-blue-100' 
-                          : 'bg-neutral-50/25 border-neutral-150 hover:border-neutral-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                          isMe ? 'bg-blue-100/40 text-blue-600' : 'bg-neutral-100 text-neutral-500'
-                        }`}>
-                          {getDeviceIcon(u.deviceName)}
-                        </div>
-                        <div className="min-w-0 text-left">
-                          <div className="flex items-center gap-1.5">
-                            <span className={`text-[11px] font-sans truncate block max-w-[120px] ${
-                              isMe ? 'font-bold text-blue-800' : 'font-semibold text-neutral-700'
-                            }`} title={u.deviceName}>
-                              {u.deviceName}
-                            </span>
-                            {isMe && (
-                              <span className="px-1.5 py-0.5 bg-blue-100 text-[8px] font-sans font-extrabold uppercase rounded text-blue-700 border border-blue-200/40 shrink-0">
-                                You
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-[9.5px] font-sans font-semibold text-neutral-400 block mt-0.5">
-                            {formatJoinedTime(u.joinedAt)}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-xs" />
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="flex items-center justify-between p-3 rounded-2xl border bg-blue-50/10 border-blue-100">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-blue-100/40 text-blue-600">
-                      {getDeviceIcon(getDeviceName())}
-                    </div>
-                    <div className="min-w-0 text-left">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] font-sans font-bold text-blue-800 truncate block max-w-[120px]">
-                          {getDeviceName()}
-                        </span>
-                        <span className="px-1.5 py-0.5 bg-blue-100 text-[8px] font-sans font-extrabold uppercase rounded text-blue-700 border border-blue-200/40 shrink-0">
-                          You
-                        </span>
-                      </div>
-                      <span className="text-[9.5px] font-sans font-semibold text-neutral-400 block mt-0.5">
-                        Just joined
-                      </span>
-                    </div>
-                  </div>
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-xs" />
-                </div>
-              )}
-            </div>
-          </div>
 
           {/* Activity Logs (Professional activity card) */}
-          <div className="bg-white border border-neutral-200/90 rounded-3xl p-5 shadow-xs flex flex-col justify-between flex-grow min-h-[340px]">
+          <div className="bg-white border border-neutral-200/80 rounded-[28px] p-5 shadow-xs flex flex-col justify-between flex-grow min-h-[350px]">
             <div>
               <div className="flex items-center justify-between border-b border-neutral-100 pb-3 mb-4">
-                <span className="text-[10px] font-sans font-bold uppercase tracking-wider text-neutral-400">Activity & Events Log</span>
-                <span className="text-[9px] font-mono font-medium text-neutral-400 bg-neutral-100 px-1.5 py-0.5 rounded uppercase border border-neutral-200">Real-time</span>
+                <span className="text-[10px] font-sans font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1">
+                  <Activity className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Activity Timeline</span>
+                </span>
+                <span className="text-[9px] font-mono font-bold text-neutral-400 bg-neutral-100 px-1.5 py-0.5 rounded uppercase border border-neutral-200">Real-time</span>
               </div>
 
-              <div id="activity-console" className="flex flex-col gap-3 max-h-[220px] overflow-y-auto pr-1">
-                {room.activity.map((act) => (
-                  <div key={act.id} className="text-left leading-relaxed font-sans text-xs flex gap-2">
-                    <span className="text-neutral-400 font-mono text-[10px] shrink-0">
-                      {new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                    </span>
-                    <span className={`font-medium ${
-                      act.type === 'upload' ? 'text-indigo-600' 
-                      : act.type === 'download' ? 'text-blue-600'
-                      : act.type === 'leave' ? 'text-rose-650'
-                      : 'text-neutral-700'
-                    }`}>
-                      {act.details}
-                    </span>
-                  </div>
-                ))}
+              {/* Beautiful custom-designed light timeline track */}
+              <div className="relative pl-6 space-y-4 border-l-2 border-neutral-100 ml-2.5 my-1.5 max-h-[240px] overflow-y-auto pr-1">
+                {room.activity.map((act) => {
+                  const getEventMeta = (type: string) => {
+                    switch (type) {
+                      case 'upload':
+                        return { icon: <UploadCloud className="w-3 h-3" />, color: 'bg-emerald-50 text-emerald-600 border-emerald-150 shadow-3xs' };
+                      case 'download':
+                        return { icon: <Download className="w-3 h-3" />, color: 'bg-blue-50 text-blue-600 border-blue-150 shadow-3xs' };
+                      case 'leave':
+                        return { icon: <X className="w-3 h-3" />, color: 'bg-rose-50 text-rose-600 border-rose-150 shadow-3xs' };
+                      case 'clipboard':
+                        return { icon: <Clipboard className="w-3 h-3" />, color: 'bg-amber-50 text-amber-600 border-amber-150 shadow-3xs' };
+                      default:
+                        return { icon: <Users className="w-3 h-3" />, color: 'bg-indigo-50 text-indigo-600 border-indigo-150 shadow-3xs' };
+                    }
+                  };
+                  const meta = getEventMeta(act.type);
+                  return (
+                    <div key={act.id} className="relative text-left font-sans text-xs pl-1">
+                      {/* Timeline Bullet */}
+                      <span className={`absolute -left-[31px] top-0.5 w-5 h-5 rounded-full flex items-center justify-center border ${meta.color} bg-white`}>
+                        {meta.icon}
+                      </span>
+                      <div className="flex flex-col gap-0.5">
+                        <p className="text-neutral-700 font-semibold leading-normal">{act.details}</p>
+                        <span className="text-[9px] font-mono text-neutral-400 font-medium">
+                          {new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            <div className="border-t border-neutral-100 pt-3 mt-4 text-center font-sans text-[10px] text-neutral-400 font-medium">
-              Listening for events details and device syncs...
+            <div className="border-t border-neutral-100/80 pt-3 mt-4 text-center font-sans text-[10px] text-neutral-400 font-semibold flex items-center justify-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping" />
+              <span>Listening for live connection & device actions...</span>
             </div>
           </div>
 
@@ -1065,21 +1123,21 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 md:p-6"
-            onClick={() => setPreviewFile(null)}
+            className="fixed inset-0 bg-neutral-950/40 backdrop-blur-md z-50 flex items-center justify-center p-4 md:p-6"
+            onClick={closePreview}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
               transition={{ type: "spring", duration: 0.4 }}
-              className="bg-white rounded-[28px] border border-neutral-200 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden text-left"
+              className="bg-white rounded-[28px] border border-neutral-200/80 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden text-left"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
               <div className="flex items-center justify-between p-5 border-b border-neutral-100 bg-neutral-50/50">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${getFileStyleAndIcon(previewFile.name).bg}`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-3xs ${getFileStyleAndIcon(previewFile.name).bg}`}>
                     {getFileStyleAndIcon(previewFile.name).icon}
                   </div>
                   <div className="min-w-0">
@@ -1093,8 +1151,8 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
                 </div>
                 <button
                   id="close-preview-x"
-                  onClick={() => setPreviewFile(null)}
-                  className="w-8 h-8 rounded-full bg-white border border-neutral-200 flex items-center justify-center text-neutral-500 hover:text-neutral-800 hover:shadow-xs transition-all cursor-pointer"
+                  onClick={closePreview}
+                  className="w-8 h-8 rounded-full bg-white border border-neutral-200 flex items-center justify-center text-neutral-500 hover:text-neutral-800 hover:shadow-xs transition-all cursor-pointer animate-card-gpu"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1117,37 +1175,83 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
                   </div>
                 )}
 
-                {!previewLoading && !previewError && previewContent && (
-                  <div className="w-full h-full flex items-center justify-center">
-                    {['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(previewFile.name.split('.').pop()?.toLowerCase() || '') ? (
-                      <img
-                        src={previewContent}
-                        alt={previewFile.name}
-                        className="max-h-[55vh] md:max-h-[62vh] object-contain rounded-xl border border-neutral-200/60 shadow-xs bg-white p-1.5 select-none"
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <div className="w-full max-h-[55vh] md:max-h-[62vh] bg-white rounded-xl border border-neutral-200/80 shadow-3xs overflow-auto">
-                        <pre className="font-mono text-[11px] leading-relaxed text-neutral-800 p-5 whitespace-pre-wrap select-text text-left">
-                          {previewContent}
-                        </pre>
-                      </div>
-                    )}
-                  </div>
-                )}
+                {!previewLoading && !previewError && previewContent && (() => {
+                  const ext = previewFile.name.split('.').pop()?.toLowerCase() || '';
+                  const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext);
+                  const isPdf = ext === 'pdf';
+                  const isAudio = ['mp3', 'wav', 'ogg', 'm4a', 'aac'].includes(ext);
+                  const isVideo = ['mp4', 'webm', 'mov'].includes(ext);
+
+                  return (
+                    <div className="w-full h-full flex items-center justify-center">
+                      {isImage && (
+                        <img
+                          src={previewContent}
+                          alt={previewFile.name}
+                          className="max-h-[55vh] md:max-h-[62vh] object-contain rounded-xl border border-neutral-200/60 shadow-xs bg-white p-1.5 select-none animate-card-gpu"
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
+
+                      {isPdf && (
+                        <object
+                          data={previewContent}
+                          type="application/pdf"
+                          className="w-full h-[55vh] md:h-[60vh] rounded-xl border border-neutral-200"
+                        >
+                          <iframe
+                            src={previewContent}
+                            className="w-full h-full border-none rounded-xl"
+                            title="PDF Preview"
+                          />
+                        </object>
+                      )}
+
+                      {isAudio && (
+                        <div className="flex flex-col items-center gap-4 p-8 bg-white rounded-3xl border border-neutral-200/80 max-w-md w-full shadow-md">
+                          <Music className="w-16 h-16 text-indigo-500 animate-pulse" />
+                          <span className="text-xs font-semibold text-neutral-600 truncate max-w-xs">{previewFile.name}</span>
+                          <audio
+                            src={previewContent}
+                            controls
+                            className="w-full mt-2"
+                            autoPlay={false}
+                          />
+                        </div>
+                      )}
+
+                      {isVideo && (
+                        <video
+                          src={previewContent}
+                          controls
+                          className="max-h-[55vh] md:max-h-[62vh] rounded-xl border border-neutral-200/60 shadow-xs bg-black w-full"
+                        />
+                      )}
+
+                      {!isImage && !isPdf && !isAudio && !isVideo && (
+                        <div className="w-full max-h-[55vh] md:max-h-[62vh] bg-white rounded-xl border border-neutral-200/80 shadow-3xs overflow-auto">
+                          <pre className="font-mono text-[11px] leading-relaxed text-neutral-800 p-5 whitespace-pre-wrap select-text text-left">
+                            {previewContent}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Footer */}
               <div className="p-4 border-t border-neutral-100 bg-neutral-50/50 flex items-center justify-between">
-                <span className="text-[10px] font-sans text-neutral-400 font-medium">
-                  Verification Preview Mode • Files are encrypted in transit
+                <span className="text-[10px] font-sans text-neutral-400 font-semibold flex items-center gap-1">
+                  <Shield className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Verification Preview Mode • Files are encrypted in transit</span>
                 </span>
                 
                 <div className="flex items-center gap-2.5">
                   <button
                     id="close-preview-btn"
-                    onClick={() => setPreviewFile(null)}
-                    className="px-4 py-2 bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-neutral-300 text-neutral-700 font-sans font-semibold text-xs rounded-xl transition-all cursor-pointer shadow-3xs active:scale-[0.99]"
+                    onClick={closePreview}
+                    className="px-4 py-2 bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-neutral-300 text-neutral-700 font-sans font-semibold text-xs rounded-xl transition-all cursor-pointer shadow-3xs active:scale-[0.99] animate-card-gpu"
                   >
                     Close View
                   </button>
@@ -1159,12 +1263,69 @@ export function RoomDashboard({ roomCode, onLeave }: RoomDashboardProps) {
                       localStorage.setItem('68share_download_count', String(currentDownloads));
                       await dbTriggerDownload(previewFile, roomCode);
                     }}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-750 text-white font-sans font-semibold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-[0.99] hover:scale-[1.01]"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-750 text-white font-sans font-semibold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-[0.99] hover:scale-[1.01] animate-card-gpu"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Download File</span>
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Room Deletion Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-neutral-950/40 backdrop-blur-md z-50 flex items-center justify-center p-4"
+            onClick={() => !isDeleting && setShowDeleteConfirm(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ type: "spring", duration: 0.4 }}
+              className="bg-white rounded-[28px] border border-neutral-200/80 shadow-2xl w-full max-w-md p-6 overflow-hidden text-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4 border border-rose-100">
+                <AlertTriangle className="w-6 h-6 text-rose-600" />
+              </div>
+
+              <h3 className="text-base font-sans font-bold text-neutral-800">Delete Room?</h3>
+              <p className="text-xs text-neutral-500 font-sans mt-2 leading-relaxed">
+                You are about to permanently delete room <strong className="font-mono text-neutral-700">{room.code}</strong>. This will instantly disconnect all screens and delete all uploaded items.
+              </p>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  id="cancel-delete-btn"
+                  disabled={isDeleting}
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 px-4 py-2.5 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 text-neutral-700 font-sans font-bold text-xs rounded-xl transition-all cursor-pointer shadow-3xs hover:scale-102 active:scale-98 disabled:opacity-50"
+                >
+                  No, Keep Room
+                </button>
+                <button
+                  id="confirm-delete-btn"
+                  disabled={isDeleting}
+                  onClick={confirmDeleteRoom}
+                  className="flex-1 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-sans font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs hover:scale-102 active:scale-98 disabled:opacity-50"
+                >
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Deleting...</span>
+                    </>
+                  ) : (
+                    <span>Yes, Delete Room</span>
+                  )}
+                </button>
               </div>
             </motion.div>
           </motion.div>

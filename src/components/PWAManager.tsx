@@ -106,14 +106,6 @@ export function PWAManager({ children }: PWAManagerProps) {
       e.preventDefault();
       setDeferredPrompt(e);
       setIsInstallable(true);
-      
-      // Auto-trigger banner after some time if not installed and not prompted
-      if (!hasPromptedThisSession.current) {
-        setTimeout(() => {
-          setShowInstallBanner(true);
-          hasPromptedThisSession.current = true;
-        }, 6000); // 6 seconds delay for subtle prompt
-      }
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -126,10 +118,6 @@ export function PWAManager({ children }: PWAManagerProps) {
 
     if (isIOSDevice && isSafari && !window.matchMedia('(display-mode: standalone)').matches) {
       setIsInstallable(true);
-      // Subtle iOS banner trigger
-      setTimeout(() => {
-        setShowInstallBanner(true);
-      }, 8000);
     }
 
     // Monitor changes to display-mode
@@ -162,7 +150,7 @@ export function PWAManager({ children }: PWAManagerProps) {
     }
 
     if (!deferredPrompt) {
-      console.warn('Deferred prompt is not available.');
+      toast('To install: Open your browser menu (e.g. three dots in Chrome or share button in Safari) and tap "Install App" or "Add to Home Screen".', 'info', 5000);
       return;
     }
 

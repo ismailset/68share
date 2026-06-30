@@ -5,7 +5,8 @@ import {
   getDoc, 
   setDoc, 
   onSnapshot,
-  runTransaction
+  runTransaction,
+  deleteDoc
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { hashPassword, generateSalt } from './crypto';
@@ -151,6 +152,27 @@ export function getDurationMs(duration: RoomDuration): number {
       return 7 * 24 * 60 * 60 * 1000;
     default:
       return 60 * 60 * 1000;
+  }
+}
+
+// Delete room helper from Firestore and local storage cache
+export async function dbDeleteRoom(code: string): Promise<void> {
+  const uppercaseCode = code.trim().toUpperCase();
+  
+  // 1. Delete from Firestore
+  try {
+    const docRef = doc(db, 'rooms', uppercaseCode);
+    await deleteDoc(docRef);
+  } catch (e) {
+    console.error('Firestore delete room failed:', e);
+    throw e;
+  }
+
+  // 2. Clear local storage cache
+  try {
+    safeLocalStorage.removeItem(`68share_local_room_${uppercaseCode}`);
+  } catch (e) {
+    console.error('Local cache delete failed:', e);
   }
 }
 

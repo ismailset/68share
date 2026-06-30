@@ -3,7 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>68Share — Instant P2P File & Clipboard Sharing</title>
+    <title>68Share — Instant Temporary File & Clipboard Sharing</title>
+    
+    <!-- Core SEO Meta Tags -->
+    <meta name="description" content="68Share is a secure, temporary file and clipboard sharing utility. Send files, sync clipboards, and share text instantly between devices with no registration." />
+    <meta name="keywords" content="temporary file sharing, browser file transfer, secure file sharing, share files online, transfer files between devices, QR code file sharing, clipboard sharing, no signup file sharing" />
+    <meta name="author" content="68Share Team" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://68share.com/" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://68share.com/" />
+    <meta property="og:title" content="68Share — Instant Temporary File & Clipboard Sharing" />
+    <meta property="og:description" content="Securely share temporary files, transfer browser clipboard contents, and access rooms instantly via QR codes with zero signups or limitations." />
+    <meta property="og:image" content="https://68share.com/social-preview.jpg" />
+    <meta property="og:site_name" content="68Share" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://68share.com/" />
+    <meta property="twitter:title" content="68Share — Instant Temporary File & Clipboard Sharing" />
+    <meta property="twitter:description" content="Securely share temporary files, transfer browser clipboard contents, and access rooms instantly via QR codes with zero signups or limitations." />
+    <meta property="twitter:image" content="https://68share.com/social-preview.jpg" />
     
     <!-- PWA Elements -->
     <link rel="manifest" href="/manifest.json" />
@@ -16,10 +38,138 @@
     <!-- Preconnect Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!-- JSON-LD Structured Data Schema -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "https://68share.com/#website",
+          "url": "https://68share.com/",
+          "name": "68Share",
+          "description": "Share Anything. Anywhere. Instantly.",
+          "publisher": {
+            "@id": "https://68share.com/#organization"
+          }
+        },
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://68share.com/#software",
+          "name": "68Share",
+          "operatingSystem": "All",
+          "applicationCategory": "UtilityApplication",
+          "browserRequirements": "Requires HTML5, Web Crypto API, IndexedDB",
+          "offers": {
+            "@type": "Offer",
+            "price": "0.00",
+            "priceCurrency": "USD"
+          },
+          "description": "Secure, ephemeral browser-based temporary file and clipboard sharing platform.",
+          "downloadUrl": "https://68share.com/"
+        },
+        {
+          "@type": "Organization",
+          "@id": "https://68share.com/#organization",
+          "name": "68Share Project",
+          "url": "https://68share.com/",
+          "logo": "https://68share.com/icon-192x192.png"
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://68share.com/#faq",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "Is 68Share free?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Yes! 68Share is entirely free. We do not require payments, subscriptions, or credit card registration. It is designed as an open-access utility."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How secure is 68Share?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "68Share is built with security first. File transactions are buffered locally in your browser's IndexedDB, secured with cryptographic room pins, and transmitted using encrypted secure paths."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Do I need an account to use 68Share?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "No, there is zero registration or signup required. Just create or join a room code to immediately start sharing files, text, and clipboard content."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How long are shared files stored?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Files are ephemeral and fully automatic. They only persist in active rooms and expire completely once deleted or after inactivity limits."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Can I transfer files between phones and laptops?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Yes! 68Share works perfectly cross-platform. Scan a room QR code on your phone to instantly link with your laptop and transfer files bidirectional."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Is there a file size limit?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "68Share supports file transfers up to 25MB per file to maintain lightning-fast browser handshakes and memory buffers."
+              }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
+
+    <!-- 
+      ======================================================================
+      LAUNCH READINESS — INTEGRATION PLACEHOLDERS
+      ======================================================================
+    -->
+    
+    <!-- Google Search Console Site Verification -->
+    <!-- REPLACE 'YOUR_GOOGLE_SEARCH_CONSOLE_VERIFICATION_ID' with your actual token from Search Console -->
+    <!-- <meta name="google-site-verification" content="YOUR_GOOGLE_SEARCH_CONSOLE_VERIFICATION_ID" /> -->
+
+    <!-- Google Analytics 4 (gtag.js) -->
+    <!-- REPLACE 'G-XXXXXXXXXX' with your actual GA4 Measurement ID when deploying -->
+    <!-- 
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-XXXXXXXXXX');
+    </script>
+    -->
+
+    <!-- Microsoft Clarity Tracking Code -->
+    <!-- REPLACE 'YOUR_CLARITY_PROJECT_ID' with your Microsoft Clarity Project ID -->
+    <!-- 
+    <script type="text/javascript">
+      (function(c,l,a,r,i,t,y){
+          c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+          t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+          y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+      })(window, document, "clarity", "script", "YOUR_CLARITY_PROJECT_ID");
+    </script>
+    -->
   </head>
   <body class="bg-[#FAFAFA] text-neutral-900 select-none antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

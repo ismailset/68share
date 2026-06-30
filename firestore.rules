@@ -50,8 +50,8 @@ service cloud.firestore {
         && request.resource.data.files.size() <= 50
         && request.resource.data.activity.size() <= 150;
 
-      // Restrict deletes to defend against mass-deletion attacks
-      allow delete: if false;
+      // Allow room deletion
+      allow delete: if true;
     }
 
     // Secure feedback submissions collection

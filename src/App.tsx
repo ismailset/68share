@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { HowItWorks } from './components/HowItWorks';
@@ -13,12 +13,37 @@ import { dbGetRoom } from './lib/storage';
 import { useToast } from './components/Toast';
 import { ErrorMonitor } from './lib/errorMonitor';
 import { FeedbackModal } from './components/FeedbackModal';
-import { PwaInstallPrompt } from './components/PwaInstallPrompt';
+import { TrustDocs } from './components/TrustDocs';
+import { FAQ } from './components/FAQ';
 
 export default function App() {
   const { toast } = useToast();
   const [activeRoomCode, setActiveRoomCode] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState<'files' | 'clipboard' | null>(null);
+  const [activeTrustDoc, setActiveTrustDoc] = useState<'privacy' | 'terms' | 'contact' | 'about' | 'security' | 'status' | null>(null);
+
+  // Sync hash changes with trust document overlays
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.toLowerCase();
+      if (hash === '#privacy') setActiveTrustDoc('privacy');
+      else if (hash === '#terms') setActiveTrustDoc('terms');
+      else if (hash === '#contact') setActiveTrustDoc('contact');
+      else if (hash === '#about') setActiveTrustDoc('about');
+      else if (hash === '#security-doc' || hash === '#security') setActiveTrustDoc('security');
+      else if (hash === '#status') setActiveTrustDoc('status');
+      else setActiveTrustDoc(null);
+    };
+
+    handleHashChange();
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const handleCloseTrustDoc = () => {
+    setActiveTrustDoc(null);
+    window.history.pushState({}, '', window.location.pathname + (window.location.search || ''));
+  };
 
   // Parse URL search parameters on boot to see if direct link or QR scan was used
   useEffect(() => {
@@ -51,6 +76,7 @@ export default function App() {
         dbGetRoom(stored).then((existing) => {
           if (existing) {
             setActiveRoomCode(stored);
+            localStorage.setItem('68share_active_room_code', stored);
           } else {
             localStorage.removeItem('68share_active_room_code');
           }
@@ -104,13 +130,26 @@ export default function App() {
       <main className="flex-grow">
         <AnimatePresence mode="wait">
           {activeRoomCode ? (
-            <RoomDashboard 
+            <motion.div
               key={`dashboard-${activeRoomCode}`}
-              roomCode={activeRoomCode} 
-              onLeave={handleLeaveRoom} 
-            />
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <RoomDashboard 
+                roomCode={activeRoomCode} 
+                onLeave={handleLeaveRoom} 
+              />
+            </motion.div>
           ) : (
-            <React.Fragment key="homepage">
+            <motion.div
+              key="homepage"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+            >
               <Hero 
                 onCreateRoom={handleOpenSetup} 
                 onJoinRoom={handleJoin}
@@ -118,8 +157,9 @@ export default function App() {
               <HowItWorks />
               <Features />
               <Security />
+              <FAQ />
               <Footer onCreateRoom={handleOpenSetup} />
-            </React.Fragment>
+            </motion.div>
           )}
         </AnimatePresence>
       </main>
@@ -137,7 +177,15 @@ export default function App() {
 
       {/* Persistent pre-launch triggers */}
       <FeedbackModal />
-      <PwaInstallPrompt />
+
+      <AnimatePresence>
+        {activeTrustDoc && (
+          <TrustDocs 
+            activeDoc={activeTrustDoc} 
+            onClose={handleCloseTrustDoc} 
+          />
+        )}
+      </AnimatePresence>
 
     </div>
   );

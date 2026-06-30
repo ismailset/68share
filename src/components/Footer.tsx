@@ -114,101 +114,60 @@ export function Footer({ onCreateRoom }: FooterProps) {
         </div>
       </section>
 
-      {/* Structured SaaS Footer Directory Map */}
-      <div className="border-t border-neutral-200/60 py-16 bg-white">
+      {/* Structured Minimalist Footer Directory Map */}
+      <div className="border-t border-neutral-100 py-16 bg-white overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-8 pb-12 border-b border-neutral-200/65">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-8 pb-12 border-b border-neutral-100">
             
-            {/* Column 1: Brand details */}
-            <div className="col-span-2 text-left">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-[#2563EB] text-white flex items-center justify-center font-display font-extrabold text-[15px] shadow-sm shadow-blue-500/20">
+            {/* Minimal Logo & Pitch */}
+            <div className="text-left">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-[#2563EB] text-white flex items-center justify-center font-display font-extrabold text-[13px] shadow-xs">
                   68
                 </div>
-                <span className="font-display font-bold text-lg text-[#0F172A] tracking-tight">68Share</span>
+                <span className="font-sans font-bold text-base text-neutral-900 tracking-tight">68Share</span>
               </div>
-              <p className="text-sm text-[#64748B] mt-4 max-w-xs font-sans leading-relaxed">
-                Empowering rapid, costless cross-device transfers. Powered by direct IndexedDB memory buffers and instant browser handshakes.
+              <p className="text-xs text-neutral-400 mt-2 max-w-xs font-sans">
+                Secure, ephemeral direct-link asset transmission.
               </p>
             </div>
 
-            {/* Column 2: Product */}
-            <div className="text-left">
-              <h4 className="text-xs font-display font-extrabold text-[#0F172A] uppercase tracking-wider mb-4">Product</h4>
-              <ul className="space-y-3 text-xs font-sans font-medium text-neutral-500">
-                <li><a href="#how-it-works" className="hover:text-[#2563EB] transition-colors">Features</a></li>
-                <li><a href="#security" className="hover:text-[#2563EB] transition-colors">Security Model</a></li>
-                <li><a href="#pricing" className="hover:text-[#2563EB] transition-colors">Pricing Tiers</a></li>
-                <li className="flex items-center gap-1">
-                  <span className="hover:text-neutral-600 cursor-pointer">Live Node</span>
-                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                </li>
-              </ul>
+            {/* Quick Minimal Links Row */}
+            <div className="flex flex-wrap gap-x-6 gap-y-3 text-xs font-sans font-semibold text-neutral-500">
+              <a href="#how-it-works" className="hover:text-[#2563EB] transition-colors relative after:absolute after:bottom-[-2px] after:left-0 after:w-0 after:h-[1.5px] after:bg-[#2563EB] hover:after:w-full after:transition-all after:duration-300">How It Works</a>
+              <a href="#security-doc" className="hover:text-[#2563EB] transition-colors relative after:absolute after:bottom-[-2px] after:left-0 after:w-0 after:h-[1.5px] after:bg-[#2563EB] hover:after:w-full after:transition-all after:duration-300">Security Specs</a>
+              <a href="#about" className="hover:text-[#2563EB] transition-colors relative after:absolute after:bottom-[-2px] after:left-0 after:w-0 after:h-[1.5px] after:bg-[#2563EB] hover:after:w-full after:transition-all after:duration-300">About</a>
+              <a href="#contact" className="hover:text-[#2563EB] transition-colors relative after:absolute after:bottom-[-2px] after:left-0 after:w-0 after:h-[1.5px] after:bg-[#2563EB] hover:after:w-full after:transition-all after:duration-300">Contact Support</a>
+              <a href="#status" className="hover:text-[#2563EB] transition-colors relative after:absolute after:bottom-[-2px] after:left-0 after:w-0 after:h-[1.5px] after:bg-[#2563EB] hover:after:w-full after:transition-all after:duration-300">Live Status</a>
             </div>
 
-            {/* Column 3: Resources */}
-            <div className="text-left">
-              <h4 className="text-xs font-display font-extrabold text-[#0F172A] uppercase tracking-wider mb-4">Resources</h4>
-              <ul className="space-y-3 text-xs font-sans font-medium text-neutral-500">
-                <li><span className="hover:text-[#2563EB] cursor-pointer text-neutral-500 flex items-center gap-0.5">Docs <ArrowUpRight className="w-3 h-3 text-neutral-400" /></span></li>
-                <li><span className="hover:text-[#2563EB] cursor-pointer flex items-center gap-0.5">Release Notes <Sparkles className="w-3 h-3 text-emerald-500" /></span></li>
-                <li><span className="hover:text-[#2563EB] cursor-pointer">Browser Sandbox</span></li>
-                <li><span className="hover:text-[#2563EB] cursor-pointer">Status Monitor</span></li>
-              </ul>
-            </div>
-
-            {/* Column 4: Legals */}
-            <div className="text-left">
-              <h4 className="text-xs font-display font-extrabold text-[#0F172A] uppercase tracking-wider mb-4">Legals</h4>
-              <ul className="space-y-3 text-xs font-sans font-medium text-neutral-500">
-                <li><span className="hover:text-[#2563EB] cursor-pointer">Privacy Policy</span></li>
-                <li><span className="hover:text-[#2563EB] cursor-pointer">Terms of Service</span></li>
-                <li><span className="hover:text-[#2563EB] cursor-pointer">Security Auditing</span></li>
-                <li><span className="hover:text-[#2563EB] cursor-pointer">Telemetry Discretion</span></li>
-              </ul>
-            </div>
-
-            {/* Column 5: Social Channels */}
-            <div className="text-left">
-              <h4 className="text-xs font-display font-extrabold text-[#0F172A] uppercase tracking-wider mb-4">Connect</h4>
-              <ul className="space-y-3 text-xs font-sans font-medium text-neutral-500">
-                <li>
-                  <span className="hover:text-[#2563EB] cursor-pointer flex items-center gap-2">
-                    <Github className="w-4 h-4 text-neutral-600" />
-                    <span>GitHub</span>
-                  </span>
-                </li>
-                <li>
-                  <span className="hover:text-[#2563EB] cursor-pointer flex items-center gap-2">
-                    <Twitter className="w-4 h-4 text-neutral-600" />
-                    <span>X Profile</span>
-                  </span>
-                </li>
-                <li>
-                  <span className="hover:text-[#2563EB] cursor-pointer flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4 text-neutral-600" />
-                    <span>Discord Mirror</span>
-                  </span>
-                </li>
-              </ul>
+            {/* Social Icons */}
+            <div className="flex gap-3">
+              <span className="p-2 border border-neutral-100 rounded-full hover:bg-[#2563EB] hover:border-[#2563EB] flex items-center justify-center text-neutral-400 hover:text-white transition-all duration-300 cursor-pointer shadow-xs active:scale-95">
+                <Github className="w-3.5 h-3.5" />
+              </span>
+              <span className="p-2 border border-neutral-100 rounded-full hover:bg-[#2563EB] hover:border-[#2563EB] flex items-center justify-center text-neutral-400 hover:text-white transition-all duration-300 cursor-pointer shadow-xs active:scale-95">
+                <Twitter className="w-3.5 h-3.5" />
+              </span>
             </div>
 
           </div>
 
-          <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <span className="font-sans font-medium text-[11px] text-neutral-400">
-              © {new Date().getFullYear()} 68Share. Custom premium infrastructure designed under high-trust constraints.
+          {/* Huge Typographic Brand Statement */}
+          <div className="py-8 select-none pointer-events-none text-center relative">
+            <h1 className="text-[12vw] sm:text-[14vw] font-sans font-black tracking-tighter bg-gradient-to-b from-neutral-100 via-neutral-200/60 to-transparent bg-clip-text text-transparent leading-none uppercase m-0 p-0 text-center select-none selection:bg-transparent">
+              68Share
+            </h1>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-neutral-50">
+            <span className="font-sans font-medium text-[10.5px] text-neutral-400">
+              © {new Date().getFullYear()} 68Share. Ephemeral transit workspace.
             </span>
-            <div className="flex gap-4">
-              <span className="p-2 border border-neutral-100 rounded-full hover:bg-neutral-50 flex items-center justify-center text-neutral-400 hover:text-[#0F172A] transition-colors cursor-pointer shadow-sm">
-                <Github className="w-4 h-4" />
-              </span>
-              <span className="p-2 border border-neutral-100 rounded-full hover:bg-neutral-50 flex items-center justify-center text-neutral-400 hover:text-[#0F172A] transition-colors cursor-pointer shadow-sm">
-                <Twitter className="w-4 h-4" />
-              </span>
-              <span className="p-2 border border-neutral-100 rounded-full hover:bg-neutral-50 flex items-center justify-center text-neutral-400 hover:text-[#0F172A] transition-colors cursor-pointer shadow-sm">
-                <MessageSquare className="w-4 h-4" />
-              </span>
+            <div className="flex gap-4 text-[10.5px] font-sans font-semibold text-neutral-400">
+              <a href="#privacy" className="hover:text-neutral-600 transition-colors">Privacy Protocol</a>
+              <span>•</span>
+              <a href="#terms" className="hover:text-neutral-600 transition-colors">Terms of Service</a>
             </div>
           </div>
         </div>

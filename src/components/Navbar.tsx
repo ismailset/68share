@@ -71,7 +71,7 @@ export function Navbar({ onCreateRoom, onNavigateHome }: NavbarProps) {
 
         {/* Action button grouping */}
         <div className="flex items-center gap-2">
-          {isInstallable && !isInstalled && (
+          {!isInstalled && (
             <button
               onClick={installApp}
               className="hidden sm:flex items-center gap-1.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 px-4 py-2 rounded-full font-sans text-xs md:text-[13px] font-bold tracking-tight cursor-pointer shadow-xs transition-all duration-200 active:scale-95 whitespace-nowrap"
@@ -132,7 +132,7 @@ export function Navbar({ onCreateRoom, onNavigateHome }: NavbarProps) {
               </motion.button>
             ))}
 
-            {isInstallable && !isInstalled && (
+            {!isInstalled && (
               <motion.button
                 initial={{ opacity: 0, x: -15 }}
                 animate={{ opacity: 1, x: 0 }}
