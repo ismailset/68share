@@ -158,14 +158,14 @@ export function getDurationMs(duration: RoomDuration): number {
 // Delete room helper from Firestore and local storage cache
 export async function dbDeleteRoom(code: string): Promise<void> {
   const uppercaseCode = code.trim().toUpperCase();
+  const path = `rooms/${uppercaseCode}`;
   
   // 1. Delete from Firestore
   try {
     const docRef = doc(db, 'rooms', uppercaseCode);
     await deleteDoc(docRef);
   } catch (e) {
-    console.error('Firestore delete room failed:', e);
-    throw e;
+    handleFirestoreError(e, OperationType.DELETE, path);
   }
 
   // 2. Clear local storage cache

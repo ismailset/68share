@@ -1,6 +1,14 @@
+# Allow all crawlers to access the main public site
 User-agent: *
 Allow: /
-Disallow: /api/
-Disallow: /room/
 
+# Prevent indexing of potential internal/utility paths and sensitive rooms
+Disallow: /api/
+Disallow: /admin/
+Disallow: /dashboard/
+Disallow: /status/
+Disallow: /*?room=      # Prevent crawlers from indexing private sharing rooms via query parameter
+Disallow: /*?*room=     # Catch-all for any query containing the room parameter
+
+# Sitemap location
 Sitemap: https://68share.com/sitemap.xml
